@@ -159,7 +159,8 @@ final class SpotifyOAuthManager: ObservableObject {
             let (data, response) = try await session.data(for: req)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
                 let snippet = String(data: data.prefix(300), encoding: .utf8) ?? ""
-                NSLog("[SpotifyOAuth] token endpoint failed (%d): %@", (response as? HTTPURLResponse)?.statusCode ?? -1, snippet)
+                Log.error("[SpotifyOAuth] token endpoint failed (\((response as? HTTPURLResponse)?.statusCode ?? -1))", .network)
+                Log.debug("[SpotifyOAuth] body: \(snippet)", .network)
                 errorMessage = String(localized: "Spotify sign-in failed.")
                 // Only a definitively revoked/invalid grant should clear the session;
                 // transient 429/5xx/network errors must keep the refresh token.
@@ -173,11 +174,11 @@ final class SpotifyOAuthManager: ObservableObject {
             // Spotify returns `scope` on both code-exchange and refresh; keep the last known
             // set if a refresh response happens to omit it.
             if let scope = token.scope { defaults.set(scope, forKey: scopesKey) }
-            NSLog("[SpotifyOAuth] token ok (refresh:%@) granted scopes: %@", isRefresh ? "true" : "false", token.scope ?? "<none in response>")
+            Log.debug("[SpotifyOAuth] token ok (refresh:\(isRefresh)) granted scopes: \(token.scope ?? "<none in response>")", .network)
             isAuthenticated = !(defaults.string(forKey: "spotifyOAuthRefreshToken") ?? "").isEmpty
             errorMessage = nil
         } catch {
-            NSLog("[SpotifyOAuth] token error: %@", String(describing: error))
+            Log.error("[SpotifyOAuth] token error: \(error)", .network)
             errorMessage = String(localized: "Spotify sign-in failed.")
         }
     }

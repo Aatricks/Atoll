@@ -155,8 +155,8 @@ final class SpotifyWebAPIClient: SpotifyAPI {
         let data = try await perform(path: path, method: "GET", body: nil, query: nil)
         do { return try JSONDecoder().decode(T.self, from: data) }
         catch {
-            let snippet = String(data: data.prefix(500), encoding: .utf8) ?? "<non-utf8>"
-            NSLog("[SpotifyAPI] DECODE FAIL %@ -> %@ | body: %@", path, String(describing: error), snippet)
+            Log.error("[SpotifyAPI] decode failed \(path): \(error)", .network)
+            Log.debug("[SpotifyAPI] body: \(String(data: data.prefix(500), encoding: .utf8) ?? "<non-utf8>")", .network)
             throw SpotifyAPIError.decoding
         }
     }
@@ -171,13 +171,13 @@ final class SpotifyWebAPIClient: SpotifyAPI {
     private func perform(path: String, method: String, body: Data?, query: String?) async throws -> Data {
         func send(forceRefresh: Bool) async throws -> (Data, HTTPURLResponse) {
             guard let token = await tokenProvider(forceRefresh) else {
-                NSLog("[SpotifyAPI] NO TOKEN for %@ (forceRefresh: %@)", path, forceRefresh ? "true" : "false")
+                Log.error("[SpotifyAPI] no token for \(path) (forceRefresh: \(forceRefresh))", .network)
                 throw SpotifyAPIError.notAuthenticated
             }
             var urlString = base + path
             if let query { urlString += (path.contains("?") ? "&" : "?") + query }
             guard let url = URL(string: urlString) else {
-                NSLog("[SpotifyAPI] BAD URL: %@", urlString)
+                Log.error("[SpotifyAPI] bad URL: \(urlString)", .network)
                 throw SpotifyAPIError.http(-1)
             }
             var req = URLRequest(url: url)
@@ -197,8 +197,8 @@ final class SpotifyWebAPIClient: SpotifyAPI {
             (data, http) = try await send(forceRefresh: true)
         }
         guard (200..<300).contains(http.statusCode) else {
-            let snippet = String(data: data.prefix(500), encoding: .utf8) ?? "<non-utf8>"
-            NSLog("[SpotifyAPI] HTTP %d %@ | body: %@", http.statusCode, path, snippet)
+            Log.error("[SpotifyAPI] HTTP \(http.statusCode) \(path)", .network)
+            Log.debug("[SpotifyAPI] body: \(String(data: data.prefix(500), encoding: .utf8) ?? "<non-utf8>")", .network)
             throw SpotifyAPIError.http(http.statusCode)
         }
         return data

@@ -52,50 +52,86 @@ enum LogCategory: String {
     }
 }
 
+/// Battery-conscious logging over the unified logging system.
+///
+/// `debug`/`info`/`notice` are compiled out of Release builds entirely — the `@autoclosure`
+/// message is never even constructed — so chatty diagnostics cost nothing in shipping
+/// builds (no string formatting, no syscall, no disk write). `error`/`fault` stay in Release
+/// but go through `os_log`, which is far cheaper than `NSLog` (deferred formatting, no
+/// per-call lock) and whose output the system manages and reads on demand.
+///
+/// Prefer this over `NSLog`/`print`. Use Swift interpolation; mark only non-sensitive
+/// values, never tokens or response bodies.
+enum Log {
+    private static let subsystem = Bundle.main.bundleIdentifier ?? "com.ebullioscopic.Atoll"
+
+    private static func handle(_ category: LogCategory) -> OSLog {
+        OSLog(subsystem: subsystem, category: category.osCategoryName)
+    }
+
+    @inline(__always)
+    static func debug(_ message: @autoclosure () -> String, _ category: LogCategory = .debug) {
+        #if DEBUG
+        os_log("%{public}@", log: handle(category), type: .debug, message())
+        #endif
+    }
+
+    @inline(__always)
+    static func info(_ message: @autoclosure () -> String, _ category: LogCategory = .debug) {
+        #if DEBUG
+        os_log("%{public}@", log: handle(category), type: .info, message())
+        #endif
+    }
+
+    /// Real problems. Kept in Release.
+    @inline(__always)
+    static func error(_ message: @autoclosure () -> String, _ category: LogCategory = .error) {
+        os_log("%{public}@", log: handle(category), type: .error, message())
+    }
+
+    /// Programmer errors / "should never happen". Kept in Release.
+    @inline(__always)
+    static func fault(_ message: @autoclosure () -> String, _ category: LogCategory = .error) {
+        os_log("%{public}@", log: handle(category), type: .fault, message())
+    }
+}
+
 struct Logger {
-    private static let subsystem = "com.ebullioscopic.Atoll"
+    private static let subsystem = Bundle.main.bundleIdentifier ?? "com.ebullioscopic.Atoll"
     private static let dateFormatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter
     }()
-    private static var osLoggerCache: [LogCategory: OSLog] = [:]
 
-    private static func osLogger(for category: LogCategory) -> OSLog {
-        if let cached = osLoggerCache[category] {
-            return cached
-        }
-        let logger = OSLog(subsystem: subsystem, category: category.osCategoryName)
-        osLoggerCache[category] = logger
-        return logger
-    }
-
+    /// `message` is an `@autoclosure`, so in Release (where the body is compiled out) the
+    /// string is never built — existing `Logger.log("…\(x)…", category:)` call sites keep
+    /// working unchanged but cost nothing in shipping builds.
     static func log(
-        _ message: String,
+        _ message: @autoclosure () -> String,
         category: LogCategory,
         file: String = #file,
         function: String = #function,
         line: Int = #line
     ) {
+        #if DEBUG
         let fileName = (file as NSString).lastPathComponent
         let timestamp = dateFormatter.string(from: Date())
-        let entry = "\(category.rawValue) [\(timestamp)] [\(fileName):\(line)] \(function) - \(message)"
-        let logger = osLogger(for: category)
-        os_log("%{public}@", log: logger, type: .default, entry)
-
-#if DEBUG
+        let entry = "\(category.rawValue) [\(timestamp)] [\(fileName):\(line)] \(function) - \(message())"
+        os_log("%{public}@", log: OSLog(subsystem: subsystem, category: category.osCategoryName), type: .debug, entry)
         Swift.print(entry)
-#endif
+        #endif
     }
-    
+
     static func trackMemory(
         file: String = #file,
         function: String = #function,
         line: Int = #line
     ) {
+        #if DEBUG
         var info = mach_task_basic_info()
         var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size)/4
-        
+
         let kerr: kern_return_t = withUnsafeMutablePointer(to: &info) {
             $0.withMemoryRebound(to: integer_t.self, capacity: 1) {
                 task_info(mach_task_self_,
@@ -104,7 +140,7 @@ struct Logger {
                          &count)
             }
         }
-        
+
         if kerr == KERN_SUCCESS {
             let usedMB = Double(info.resident_size) / 1024.0 / 1024.0
             log(String(format: "Memory used: %.2f MB", usedMB),
@@ -113,6 +149,7 @@ struct Logger {
                 function: function,
                 line: line)
         }
+        #endif
     }
 }
 
@@ -124,7 +161,7 @@ extension View {
 
 struct ViewLifecycleTracker: ViewModifier {
     let identifier: String
-    
+
     func body(content: Content) -> some View {
         content
             .onAppear {
@@ -136,4 +173,4 @@ struct ViewLifecycleTracker: ViewModifier {
                 Logger.trackMemory()
             }
     }
-} 
+}

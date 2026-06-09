@@ -53,11 +53,11 @@ final class SpotifyLibraryStore: ObservableObject {
             recentlyPlayed = Self.mapRecents(recents)
         } catch SpotifyAPIError.http(429) {
             errorMessage = String(localized: "Spotify is rate-limiting — wait a minute, then reopen the tab.")
-            NSLog("[SpotifyAPI] loadHome: 429 rate limited")
+            Log.error("[SpotifyLibrary] loadHome: 429 rate limited", .network)
         } catch {
             // Diagnostic: surface the concrete error (e.g. http(403) / decoding / notAuthenticated).
             errorMessage = "Couldn't load library: \(error)"
-            NSLog("[SpotifyAPI] loadHome failed: %@", String(describing: error))
+            Log.error("[SpotifyLibrary] loadHome failed: \(error)", .network)
         }
     }
 

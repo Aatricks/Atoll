@@ -79,7 +79,7 @@ final class SpotifyPlayerManager: ObservableObject {
 
         // An https baseURL gives the page a secure context (EME/DRM requires it).
         web.loadHTMLString(Self.html, baseURL: URL(string: "https://atoll.localhost/"))
-        NSLog("[SpotifyPlayer] start: loading Web Playback SDK page (on-screen)")
+        Log.debug("[SpotifyPlayer] start: loading Web Playback SDK page (on-screen)")
     }
 
     func stop() {
@@ -165,10 +165,10 @@ final class SpotifyPlayerManager: ObservableObject {
             isReady = true
             statusMessage = nil
             configureRemoteCommands()
-            NSLog("[SpotifyPlayer] READY device_id=%@", deviceID ?? "nil")
+            Log.debug("[SpotifyPlayer] READY device_id=\(deviceID ?? "nil")")
         case "not_ready":
             isReady = false
-            NSLog("[SpotifyPlayer] not_ready (device went offline)")
+            Log.debug("[SpotifyPlayer] not_ready (device went offline)")
         case "state":
             isPaused = body["paused"] as? Bool ?? true
             currentTrack = body["track"] as? String
@@ -182,12 +182,12 @@ final class SpotifyPlayerManager: ObservableObject {
         case "error":
             let kind = body["kind"] as? String ?? "?"
             let message = body["message"] as? String ?? ""
-            NSLog("[SpotifyPlayer] ERROR %@: %@", kind, message)
+            Log.error("[SpotifyPlayer] error \(kind): \(message)")
             statusMessage = kind == "account"
                 ? String(localized: "In-app playback needs Spotify Premium.")
                 : "Player error (\(kind)): \(message)"
         case let other:
-            NSLog("[SpotifyPlayer] event %@: %@", other, String(describing: body))
+            Log.debug("[SpotifyPlayer] event \(other): \(String(describing: body))")
         }
     }
 
