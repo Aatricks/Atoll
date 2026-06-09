@@ -2,6 +2,11 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <!-- Allow loading third-party frameworks (e.g. Lottie) whose code signature has a
+         different Team ID than this ad-hoc-signed app. Without this, Hardened Runtime's
+         library validation aborts launch in Release/archived/DMG builds. -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
     <key>com.apple.security.mach-services</key>
     <array>
         <string>com.ebullioscopic.Atoll.xpc</string>
