@@ -1023,7 +1023,15 @@ extension Defaults.Keys {
     static let spotifyAuthAccessToken = Key<String>("spotifyAuthAccessToken", default: "")
     static let spotifyAuthAccessTokenExpiration = Key<Double>("spotifyAuthAccessTokenExpiration", default: 0)
     static let spotifyAuthLastValidatedAt = Key<Double>("spotifyAuthLastValidatedAt", default: 0)
-    
+    static let spotifyDefaultShuffle = Key<Bool>("spotifyDefaultShuffle", default: false)
+    static let enableSpotifyFeature = Key<Bool>("enableSpotifyFeature", default: false)
+    static let spotifyRecentLimit = Key<Int>("spotifyRecentLimit", default: 20)
+    static let spotifyOAuthClientID = Key<String>("spotifyOAuthClientID", default: "")
+    static let spotifyOAuthAccessToken = Key<String>("spotifyOAuthAccessToken", default: "")
+    static let spotifyOAuthRefreshToken = Key<String>("spotifyOAuthRefreshToken", default: "")
+    static let spotifyOAuthExpiration = Key<Double>("spotifyOAuthExpiration", default: 0)
+    static let spotifyStandalonePlayback = Key<Bool>("spotifyStandalonePlayback", default: true)
+
     // MARK: Bluetooth Audio Devices
     static let showBluetoothDeviceConnections = Key<Bool>("showBluetoothDeviceConnections", default: true)
     static let useColorCodedBatteryDisplay = Key<Bool>("useColorCodedBatteryDisplay", default: true)
@@ -1067,7 +1075,16 @@ extension Defaults.Keys {
     static let terminalForegroundColor = Key<Color>("terminalForegroundColor", default: .white)
     static let terminalCursorColor = Key<Color>("terminalCursorColor", default: Color(.selectedControlColor))
     static let terminalStickyMode = Key<Bool>("terminalStickyMode", default: false)
-    
+
+    // MARK: Folders Feature
+    static let enableFoldersFeature = Key<Bool>("enableFoldersFeature", default: false)
+    static let foldersShowSystemShortcuts = Key<Bool>("foldersShowSystemShortcuts", default: true)
+    static let foldersShowRecentFiles = Key<Bool>("foldersShowRecentFiles", default: true)
+    static let foldersShowRecentDownloads = Key<Bool>("foldersShowRecentDownloads", default: true)
+    static let foldersShowHidden = Key<Bool>("foldersShowHidden", default: false)
+    static let foldersSortMode = Key<FolderSortMode>("foldersSortMode", default: .nameAsc)
+    static let foldersRecentLimit = Key<Int>("foldersRecentLimit", default: 10)
+
     // MARK: Timer Feature
     static let enableTimerFeature = Key<Bool>("enableTimerFeature", default: true)
     static let timerDisplayMode = Key<TimerDisplayMode>("timerDisplayMode", default: .tab)

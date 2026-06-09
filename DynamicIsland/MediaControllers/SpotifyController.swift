@@ -24,8 +24,9 @@ import Combine
 import Foundation
 import SwiftUI
 
-class SpotifyController: MediaControllerProtocol {
+class SpotifyController: MediaControllerProtocol, SpotifyDesktopControlling {
     static let bundleIdentifier = "com.spotify.client"
+    static let sharedForLaunch = SpotifyController()
 
     // MARK: - Properties
     @Published private var playbackState: PlaybackState = PlaybackState(
@@ -120,6 +121,27 @@ class SpotifyController: MediaControllerProtocol {
     func toggleRepeat() async {
         await executeAndRefresh("set repeating to not repeating")
     }
+
+    // MARK: - Launch API (used by SpotifyPlaybackLauncher)
+
+    func playContext(uri: String, shuffle: Bool) async {
+        await executeCommand("set shuffling to \(shuffle)")
+        await executeCommand("play track \"\(uri)\"")
+    }
+
+    func playTrack(uri: String, inContext contextURI: String?) async {
+        if let contextURI {
+            await executeCommand("play track \"\(uri)\" in context \"\(contextURI)\"")
+        } else {
+            await executeCommand("play track \"\(uri)\"")
+        }
+    }
+
+    func setShuffle(_ on: Bool) async {
+        await executeCommand("set shuffling to \(on)")
+    }
+
+    func isRunning() -> Bool { isActive() }
 
     func isActive() -> Bool {
         NSWorkspace.shared.runningApplications.contains { $0.bundleIdentifier == playbackState.bundleIdentifier }

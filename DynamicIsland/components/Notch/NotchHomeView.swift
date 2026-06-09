@@ -277,6 +277,7 @@ struct AlbumArtView: View {
 struct MusicControlsView: View {
     @EnvironmentObject var vm: DynamicIslandViewModel
     @ObservedObject var musicManager = MusicManager.shared
+    @ObservedObject var likeController = SpotifyLikeController.shared
     @ObservedObject var coordinator = DynamicIslandViewCoordinator.shared
     @State private var sliderValue: Double = MusicManager.shared.estimatedPlaybackPosition()
     @State private var dragging: Bool = false
@@ -635,6 +636,16 @@ struct MusicControlsView: View {
             ) {
                 enableLyrics.toggle()
             }
+        case .like:
+            HoverButton(
+                icon: likeController.isLiked ? "heart.fill" : "heart",
+                iconColor: likeController.isLiked ? brandAccentColor : .white,
+                scale: .medium
+            ) {
+                likeController.toggle()
+            }
+            .opacity(likeController.canLike ? 1 : 0.35)
+            .disabled(!likeController.canLike)
         }
     }
 
@@ -761,6 +772,7 @@ struct NotchHomeView: View {
 }
 
 struct MusicSliderView: View {
+    @EnvironmentObject var vm: DynamicIslandViewModel
     @Binding var sliderValue: Double
     @Binding var duration: Double
     @Binding var lastDragged: Date
@@ -804,11 +816,38 @@ struct MusicSliderView: View {
         .onChange(of: currentDate) { newDate in
             guard !isLiveStream else { return }
             guard !dragging, timestampDate.timeIntervalSince(lastDragged) > -1 else { return }
-            sliderValue = MusicManager.shared.estimatedPlaybackPosition(at: newDate)
+            
+            let estimated = MusicManager.shared.estimatedPlaybackPosition(at: newDate)
+            let delta = abs(sliderValue - estimated)
+            
+            if delta > 1.5 {
+                // State correction or seek jump: snap instantly
+                sliderValue = estimated
+            } else if isPlaying {
+                // Standard 1-second interval progression: animate smoothly
+                withAnimation(.linear(duration: 1.0)) {
+                    sliderValue = estimated
+                }
+            } else {
+                sliderValue = estimated
+            }
+        }
+        .onChange(of: elapsedTime) { _, newTime in
+            guard !isLiveStream, !dragging else { return }
+            let estimated = MusicManager.shared.estimatedPlaybackPosition()
+            let delta = abs(sliderValue - estimated)
+            
+            if delta > 1.5 {
+                sliderValue = estimated
+            } else if isPlaying {
+                withAnimation(.linear(duration: 1.0)) {
+                    sliderValue = estimated
+                }
+            } else {
+                sliderValue = estimated
+            }
         }
         .onChange(of: isPlaying) { _, playing in
-            // Snap slider to the exact position when music pauses so
-            // the in-flight animation doesn't coast past the true value.
             if !playing {
                 sliderValue = MusicManager.shared.estimatedPlaybackPosition()
             }
@@ -816,6 +855,13 @@ struct MusicSliderView: View {
         .onChange(of: isLiveStream) { isLive in
             if isLive {
                 sliderValue = 0
+            }
+        }
+        .onChange(of: vm.notchState) { _, newState in
+            if newState == .open {
+                // Hard-align slider to strict ground-truth instantly on expansion
+                // to eliminate background webview throttling drift before drawing
+                sliderValue = elapsedTime
             }
         }
     }
@@ -887,18 +933,9 @@ struct MusicSliderView: View {
             restingTrackHeight: restingTrackHeight,
             draggingTrackHeight: draggingTrackHeight
         )
-        // Smoothly interpolate the filled track between 1-second ticks using
-        // Core Animation — runs on the GPU with zero CPU polling cost.
-        // Disabled while dragging or paused so the bar responds instantly.
-        .animation(
-            !dragging && isPlaying && !isLiveStream
-                ? .linear(duration: 1.0)
-                : nil,
-            value: sliderValue
-        )
     }
 
-    private var sliderTint: Color {//
+    private var sliderTint: Color {
         switch Defaults[.sliderColor] {
         case .albumArt:
             return Color(nsColor: color).ensureMinimumBrightness(factor: 0.6)
@@ -945,7 +982,6 @@ struct MusicSliderView: View {
             return String(format: "%d:%02d", minutes, remainingSeconds)
         }
     }
-
 }
 
 
