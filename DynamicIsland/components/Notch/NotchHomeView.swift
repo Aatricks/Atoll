@@ -388,7 +388,8 @@ struct MusicControlsView: View {
                 elapsedTime: musicManager.elapsedTime,
                 playbackRate: musicManager.playbackRate,
                 isPlaying: musicManager.isPlaying,
-                isLiveStream: musicManager.isLiveStream
+                isLiveStream: musicManager.isLiveStream,
+                notchState: vm.notchState
             ) { newValue in
                 guard !musicManager.isLiveStream else { return }
                 MusicManager.shared.seek(to: newValue)
@@ -772,7 +773,6 @@ struct NotchHomeView: View {
 }
 
 struct MusicSliderView: View {
-    @EnvironmentObject var vm: DynamicIslandViewModel
     @Binding var sliderValue: Double
     @Binding var duration: Double
     @Binding var lastDragged: Date
@@ -784,6 +784,8 @@ struct MusicSliderView: View {
     let playbackRate: Double
     let isPlaying: Bool
     let isLiveStream: Bool
+    // Optional so hosts without a notch (e.g. the lock screen panel) can omit it
+    var notchState: NotchState? = nil
     var onValueChange: (Double) -> Void
     var labelLayout: TimeLabelLayout = .stacked
     var trailingLabel: TrailingLabel = .duration
@@ -857,7 +859,7 @@ struct MusicSliderView: View {
                 sliderValue = 0
             }
         }
-        .onChange(of: vm.notchState) { _, newState in
+        .onChange(of: notchState) { _, newState in
             if newState == .open {
                 // Hard-align slider to strict ground-truth instantly on expansion
                 // to eliminate background webview throttling drift before drawing
