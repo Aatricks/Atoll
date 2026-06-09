@@ -43,7 +43,7 @@ private func screenCaptureEventCallback(eventType: Int32, _: Int32, _: Int32, co
     let manager = Unmanaged<ScreenRecordingManager>.fromOpaque(context).takeUnretainedValue()
     
     DispatchQueue.main.async {
-        print("ScreenRecordingManager: 📢 Screen capture event received (type: \(eventType))")
+        Log.debug("ScreenRecordingManager: 📢 Screen capture event received (type: \(eventType))")
         manager.checkRecordingStatus()
     }
 }
@@ -88,13 +88,13 @@ class ScreenRecordingManager: ObservableObject {
     /// Start monitoring for screen recording activity
     func startMonitoring() {
         guard !isMonitoring else { 
-            print("ScreenRecordingManager: Already monitoring, skipping start")
+            Log.debug("ScreenRecordingManager: Already monitoring, skipping start")
             return 
         }
         
         isMonitoring = true
         
-        print("ScreenRecordingManager: 🟢 Starting screen capture monitoring (Private API)...")
+        Log.debug("ScreenRecordingManager: 🟢 Starting screen capture monitoring (Private API)...")
         
         // Setup event-driven capture detection using private CoreGraphics APIs
         setupPrivateAPINotifications()
@@ -102,17 +102,17 @@ class ScreenRecordingManager: ObservableObject {
         // Check initial state
         checkRecordingStatus()
         
-        print("ScreenRecordingManager: ✅ Started monitoring (event-driven, no polling)")
+        Log.debug("ScreenRecordingManager: ✅ Started monitoring (event-driven, no polling)")
     }
     
     /// Stop monitoring for screen recording activity
     func stopMonitoring() {
         guard isMonitoring else { 
-            print("ScreenRecordingManager: Not monitoring, skipping stop")
+            Log.debug("ScreenRecordingManager: Not monitoring, skipping stop")
             return 
         }
         
-        print("ScreenRecordingManager: 🛑 Stopping monitoring...")
+        Log.debug("ScreenRecordingManager: 🛑 Stopping monitoring...")
         
         isMonitoring = false
         
@@ -124,11 +124,11 @@ class ScreenRecordingManager: ObservableObject {
         
         // Reset recording state when stopping
         if isRecording {
-            print("ScreenRecordingManager: Resetting isRecording from true to false")
+            Log.debug("ScreenRecordingManager: Resetting isRecording from true to false")
         }
         isRecording = false
         
-        print("ScreenRecordingManager: ✅ Stopped monitoring")
+        Log.debug("ScreenRecordingManager: ✅ Stopped monitoring")
     }
     
     /// Toggle monitoring state
@@ -155,9 +155,9 @@ class ScreenRecordingManager: ObservableObject {
         let registered2 = CGSRegisterNotifyProc(screenCaptureEventCallback, 1503, context)
         
         if registered1 && registered2 {
-            print("ScreenRecordingManager: ✅ Private API notifications registered")
+            Log.debug("ScreenRecordingManager: ✅ Private API notifications registered")
         } else {
-            print("ScreenRecordingManager: ⚠️ Failed to register private API notifications")
+            Log.error("ScreenRecordingManager: ⚠️ Failed to register private API notifications")
         }
     }
     
@@ -166,11 +166,11 @@ class ScreenRecordingManager: ObservableObject {
         let currentRecordingState = CGSIsScreenWatcherPresent()
         
         // Debug: Always log current check
-        print("ScreenRecordingManager: 🔍 Checking... current=\(isRecording), detected=\(currentRecordingState)")
+        Log.debug("ScreenRecordingManager: 🔍 Checking... current=\(isRecording), detected=\(currentRecordingState)")
         
         // Debounce changes to avoid flickering
         if currentRecordingState != isRecording {
-            print("ScreenRecordingManager: 🔄 State change detected (\(isRecording) -> \(currentRecordingState))")
+            Log.debug("ScreenRecordingManager: 🔄 State change detected (\(isRecording) -> \(currentRecordingState))")
             
             if currentRecordingState && !isRecording {
                 // Started recording
@@ -182,7 +182,7 @@ class ScreenRecordingManager: ObservableObject {
                 withAnimation(.smooth) {
                     isRecording = currentRecordingState
                 }
-                print("ScreenRecordingManager: 🔴 Screen recording STARTED")
+                Log.debug("ScreenRecordingManager: 🔴 Screen recording STARTED")
             } else if !currentRecordingState && isRecording {
                 // Stopped recording - let expanding view auto-collapse naturally (like music)
                 lastUpdated = Date()
@@ -191,7 +191,7 @@ class ScreenRecordingManager: ObservableObject {
                 withAnimation(.smooth) {
                     isRecording = currentRecordingState
                 }
-                print("ScreenRecordingManager: ⚪ Screen recording STOPPED")
+                Log.debug("ScreenRecordingManager: ⚪ Screen recording STOPPED")
             }
         }
     }
@@ -207,7 +207,7 @@ class ScreenRecordingManager: ObservableObject {
             }
         }
         
-        print("ScreenRecordingManager: ⏱️ Started duration tracking")
+        Log.debug("ScreenRecordingManager: ⏱️ Started duration tracking")
     }
     
     /// Stop tracking recording duration
@@ -221,7 +221,7 @@ class ScreenRecordingManager: ObservableObject {
             self?.recordingDuration = 0
         }
         
-        print("ScreenRecordingManager: ⏹️ Stopped duration tracking")
+        Log.debug("ScreenRecordingManager: ⏹️ Stopped duration tracking")
     }
     
     /// Update the current recording duration

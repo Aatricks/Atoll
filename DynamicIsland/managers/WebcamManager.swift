@@ -118,9 +118,9 @@ class WebcamManager: NSObject, ObservableObject {
         case .notDetermined:
             requestVideoAccess()
         case .denied, .restricted:
-            NSLog("Camera access denied or restricted")
+            Log.error("Camera access denied or restricted")
         @unknown default:
-            NSLog("Unknown authorization status")
+            Log.debug("Unknown authorization status")
         }
     }
     
@@ -184,7 +184,7 @@ class WebcamManager: NSObject, ObservableObject {
                 }
                 
                 guard let videoDevice = videoDevice else {
-                    NSLog("No video devices available")
+                    Log.debug("No video devices available")
                     DispatchQueue.main.async {
                         self.isSessionRunning = false
                         self.cameraAvailable = false
@@ -193,7 +193,7 @@ class WebcamManager: NSObject, ObservableObject {
                     return
                 }
                 
-                NSLog("Using camera: \(videoDevice.localizedName) (ID: \(videoDevice.uniqueID))")
+                Log.debug("Using camera: \(videoDevice.localizedName) (ID: \(videoDevice.uniqueID))")
                 
                 // Lock device for configuration
                 try videoDevice.lockForConfiguration()
@@ -228,9 +228,9 @@ class WebcamManager: NSObject, ObservableObject {
                     completion(true)
                 }
                 
-                NSLog("Capture session setup completed successfully")
+                Log.debug("Capture session setup completed successfully")
             } catch {
-                NSLog("Failed to setup capture session: \(error.localizedDescription)")
+                Log.error("Failed to setup capture session: \(error.localizedDescription)")
                 DispatchQueue.main.async {
                     self.isSessionRunning = false
                     self.cameraAvailable = false
@@ -271,7 +271,7 @@ class WebcamManager: NSObject, ObservableObject {
     }
 
     @objc private func deviceWasDisconnected(notification: Notification) {
-        NSLog("Camera device was disconnected")
+        Log.debug("Camera device was disconnected")
         sessionQueue.async { [weak self] in
             guard let self = self else { return }
             self.stopSession()
@@ -282,7 +282,7 @@ class WebcamManager: NSObject, ObservableObject {
     }
 
     @objc private func deviceWasConnected(notification: Notification) {
-        NSLog("Camera device was connected")
+        Log.debug("Camera device was connected")
         sessionQueue.async { [weak self] in
             guard let self = self else { return }
             self.checkCameraAvailability()
@@ -326,7 +326,7 @@ class WebcamManager: NSObject, ObservableObject {
             // Update state on main thread
             self.updateSessionState()
             
-            NSLog("Capture session started successfully")
+            Log.debug("Capture session started successfully")
         }
     }
     
@@ -341,7 +341,7 @@ class WebcamManager: NSObject, ObservableObject {
             
             self.cleanupExistingSession()
             
-            NSLog("Capture session stopped and cleaned up")
+            Log.debug("Capture session stopped and cleaned up")
         }
     }
 }

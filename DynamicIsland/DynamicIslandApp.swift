@@ -213,7 +213,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             
             // A target music app was launched, restart capture to include it
             if Defaults[.enableRealTimeWaveform] {
-                print("🎵 [AudioTap] Music app launched: \(bundleID), restarting capture...")
+                Log.debug("🎵 [AudioTap] Music app launched: \(bundleID), restarting capture...")
                 // Give the app a moment to fully launch
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
                     AudioTap.shared.restartCapture()
@@ -233,7 +233,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             
             // A target music app was terminated, restart capture to update the list
             if Defaults[.enableRealTimeWaveform] {
-                print("🎵 [AudioTap] Music app terminated: \(bundleID), restarting capture...")
+                Log.debug("🎵 [AudioTap] Music app terminated: \(bundleID), restarting capture...")
                 AudioTap.shared.restartCapture()
             }
         }
@@ -267,12 +267,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     @objc func onScreenLocked(_: Notification) {
-        print("Screen locked")
+        Log.debug("Screen locked")
         hideWindowsForLock()
     }
 
     @objc func onScreenUnlocked(_: Notification) {
-        print("Screen unlocked")
+        Log.debug("Screen unlocked")
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             guard let self = self else { return }
             self.restoreWindowsAfterLock()

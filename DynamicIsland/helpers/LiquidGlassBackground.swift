@@ -198,7 +198,7 @@ public struct LiquidGlassBackground<Content: View>: NSViewRepresentable {
             let m     = class_getInstanceMethod(object_getClass(object), sel)
         else {
             #if DEBUG
-            print("✗ LiquidGlassBackground: selector set_variant: not found. falling back to default")
+            Log.debug("✗ LiquidGlassBackground: selector set_variant: not found. falling back to default")
             #endif
             return
         }

@@ -123,7 +123,7 @@ class RealTimeAudioSpectrum: NSView {
         // Debug: log magnitudes periodically
         debugLogCounter += 1
         if debugLogCounter % 60 == 0 { // Every 2 seconds at 30fps
-            print("📊 [Spectrum] Magnitudes: [\(magnitudes.x), \(magnitudes.y), \(magnitudes.z), \(magnitudes.w)]")
+            Log.debug("📊 [Spectrum] Magnitudes: [\(magnitudes.x), \(magnitudes.y), \(magnitudes.z), \(magnitudes.w)]")
         }
         #endif
         

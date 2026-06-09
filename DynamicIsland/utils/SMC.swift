@@ -171,21 +171,21 @@ public class SMC {
         let matchingDictionary: CFMutableDictionary = IOServiceMatching("AppleSMC")
         result = IOServiceGetMatchingServices(kIOMasterPortDefault, matchingDictionary, &iterator)
         if result != kIOReturnSuccess {
-            print("Error IOServiceGetMatchingServices(): " + (String(cString: mach_error_string(result), encoding: String.Encoding.ascii) ?? "unknown error"))
+            Log.error("Error IOServiceGetMatchingServices(): " + (String(cString: mach_error_string(result), encoding: String.Encoding.ascii) ?? "unknown error"))
             return
         }
         
         device = IOIteratorNext(iterator)
         IOObjectRelease(iterator)
         if device == 0 {
-            print("Error IOIteratorNext(): " + (String(cString: mach_error_string(result), encoding: String.Encoding.ascii) ?? "unknown error"))
+            Log.error("Error IOIteratorNext(): " + (String(cString: mach_error_string(result), encoding: String.Encoding.ascii) ?? "unknown error"))
             return
         }
         
         result = IOServiceOpen(device, mach_task_self_, 0, &conn)
         IOObjectRelease(device)
         if result != kIOReturnSuccess {
-            print("Error IOServiceOpen(): " + (String(cString: mach_error_string(result), encoding: String.Encoding.ascii) ?? "unknown error"))
+            Log.error("Error IOServiceOpen(): " + (String(cString: mach_error_string(result), encoding: String.Encoding.ascii) ?? "unknown error"))
             return
         }
     }
@@ -193,7 +193,7 @@ public class SMC {
     deinit {
         let result = self.close()
         if result != kIOReturnSuccess {
-            print("error close smc connection: " + (String(cString: mach_error_string(result), encoding: String.Encoding.ascii) ?? "unknown error"))
+            Log.error("error close smc connection: " + (String(cString: mach_error_string(result), encoding: String.Encoding.ascii) ?? "unknown error"))
         }
     }
     
@@ -207,7 +207,7 @@ public class SMC {
         
         result = read(&val)
         if result != kIOReturnSuccess {
-            print("Error read(\(key)): " + (String(cString: mach_error_string(result), encoding: String.Encoding.ascii) ?? "unknown error"))
+            Log.error("Error read(\(key)): " + (String(cString: mach_error_string(result), encoding: String.Encoding.ascii) ?? "unknown error"))
             return nil
         }
         
@@ -278,7 +278,7 @@ public class SMC {
         
         result = read(&val)
         if result != kIOReturnSuccess {
-            print("Error read(): " + (String(cString: mach_error_string(result), encoding: String.Encoding.ascii) ?? "unknown error"))
+            Log.error("Error read(): " + (String(cString: mach_error_string(result), encoding: String.Encoding.ascii) ?? "unknown error"))
             return nil
         }
         
@@ -304,7 +304,7 @@ public class SMC {
                 
                 return (c1 + c2 + c3 + c4 + c5 + c6 + c7 + c8 + c9 + c10 + c11 + c12).trimmingCharacters(in: .whitespaces)
             default:
-                print("unsupported data type \(val.dataType) for key: \(key)")
+                Log.debug("unsupported data type \(val.dataType) for key: \(key)")
                 return nil
             }
         }
@@ -317,7 +317,7 @@ public class SMC {
         
         let keysNum: Double? = self.getValue("#KEY")
         if keysNum == nil {
-            print("ERROR no keys count found")
+            Log.debug("ERROR no keys count found")
             return list
         }
         
@@ -365,7 +365,7 @@ public class SMC {
             
             result = read(&value)
             if result != kIOReturnSuccess {
-                print("Error read fan mode: " + (String(cString: mach_error_string(result), encoding: String.Encoding.ascii) ?? "unknown error"))
+                Log.error("Error read fan mode: " + (String(cString: mach_error_string(result), encoding: String.Encoding.ascii) ?? "unknown error"))
                 return
             }
             
@@ -378,7 +378,7 @@ public class SMC {
             
             result = write(value)
             if result != kIOReturnSuccess {
-                print("Error write: " + (String(cString: mach_error_string(result), encoding: String.Encoding.ascii) ?? "unknown error"))
+                Log.error("Error write: " + (String(cString: mach_error_string(result), encoding: String.Encoding.ascii) ?? "unknown error"))
                 return
             }
         }
@@ -413,7 +413,7 @@ public class SMC {
         
         result = read(&value)
         if result != kIOReturnSuccess {
-            print("Error read fan mode: " + (String(cString: mach_error_string(result), encoding: String.Encoding.ascii) ?? "unknown error"))
+            Log.error("Error read fan mode: " + (String(cString: mach_error_string(result), encoding: String.Encoding.ascii) ?? "unknown error"))
             return
         }
         
@@ -426,7 +426,7 @@ public class SMC {
         
         result = write(value)
         if result != kIOReturnSuccess {
-            print("Error write: " + (String(cString: mach_error_string(result), encoding: String.Encoding.ascii) ?? "unknown error"))
+            Log.error("Error write: " + (String(cString: mach_error_string(result), encoding: String.Encoding.ascii) ?? "unknown error"))
             return
         }
     }
@@ -435,7 +435,7 @@ public class SMC {
         let maxSpeed = Int(self.getValue("F\(id)Mx") ?? 4000)
         
         if speed > maxSpeed {
-            print("new fan speed (\(speed)) is more than maximum speed (\(maxSpeed))")
+            Log.debug("new fan speed (\(speed)) is more than maximum speed (\(maxSpeed))")
             return
         }
         
@@ -444,7 +444,7 @@ public class SMC {
         
         result = read(&value)
         if result != kIOReturnSuccess {
-            print("Error read fan value: " + (String(cString: mach_error_string(result), encoding: String.Encoding.ascii) ?? "unknown error"))
+            Log.error("Error read fan value: " + (String(cString: mach_error_string(result), encoding: String.Encoding.ascii) ?? "unknown error"))
             return
         }
         
@@ -463,7 +463,7 @@ public class SMC {
         
         result = write(value)
         if result != kIOReturnSuccess {
-            print("Error write: " + (String(cString: mach_error_string(result), encoding: String.Encoding.ascii) ?? "unknown error"))
+            Log.error("Error write: " + (String(cString: mach_error_string(result), encoding: String.Encoding.ascii) ?? "unknown error"))
             return
         }
     }
@@ -474,7 +474,7 @@ public class SMC {
         
         let result = write(value)
         if result != kIOReturnSuccess {
-            print("Error write: " + (String(cString: mach_error_string(result), encoding: String.Encoding.ascii) ?? "unknown error"))
+            Log.error("Error write: " + (String(cString: mach_error_string(result), encoding: String.Encoding.ascii) ?? "unknown error"))
         }
     }
     

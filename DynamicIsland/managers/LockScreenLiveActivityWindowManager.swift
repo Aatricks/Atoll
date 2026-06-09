@@ -106,12 +106,12 @@ class LockScreenLiveActivityWindowManager {
 
     private func lockContext() -> (notchSize: CGSize, screen: NSScreen)? {
         guard let screen = LockScreenDisplayContextProvider.shared.contextSnapshot()?.screen ?? NSScreen.main else {
-            print("[\(timestamp())] LockScreenLiveActivityWindowManager: no main screen available")
+            Log.debug("[\(timestamp())] LockScreenLiveActivityWindowManager: no main screen available")
             return nil
         }
 
         guard let viewModel else {
-            print("[\(timestamp())] LockScreenLiveActivityWindowManager: no view model configured")
+            Log.debug("[\(timestamp())] LockScreenLiveActivityWindowManager: no view model configured")
             return nil
         }
 
@@ -161,7 +161,7 @@ class LockScreenLiveActivityWindowManager {
 
         currentNotchSize = context.notchSize
 
-        print("[\(timestamp())] LockScreenLiveActivityWindowManager: realigned window due to \(reason)")
+        Log.debug("[\(timestamp())] LockScreenLiveActivityWindowManager: realigned window due to \(reason)")
     }
 
     private func present(notchSize: CGSize, on screen: NSScreen) {
@@ -225,7 +225,7 @@ class LockScreenLiveActivityWindowManager {
             }
         }
 
-        print("[\(timestamp())] LockScreenLiveActivityWindowManager: showing locked state")
+        Log.debug("[\(timestamp())] LockScreenLiveActivityWindowManager: showing locked state")
     }
 
     func showUnlockAndScheduleHide() {
@@ -281,7 +281,7 @@ class LockScreenLiveActivityWindowManager {
             self.currentNotchSize = nil
         }
 
-        print("[\(timestamp())] LockScreenLiveActivityWindowManager: HUD hidden")
+        Log.debug("[\(timestamp())] LockScreenLiveActivityWindowManager: HUD hidden")
     }
 
     func configure(viewModel: DynamicIslandViewModel) {

@@ -480,8 +480,8 @@ struct AnimationEditorView: View {
             overrides[existing.id.uuidString] = config
             Defaults[.animationTransformOverrides] = overrides
             
-            print("✅ [AnimationEditor] Saved transform override for: \(existing.name)")
-            print("✅ [AnimationEditor] Override: \(config)")
+            Log.debug("✅ [AnimationEditor] Saved transform override for: \(existing.name)")
+            Log.debug("✅ [AnimationEditor] Override: \(config)")
             
             // Force view refresh by updating selectedIdleAnimation if this is the selected one
             if Defaults[.selectedIdleAnimation]?.id == existing.id {

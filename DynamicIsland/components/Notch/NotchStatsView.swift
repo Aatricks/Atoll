@@ -419,12 +419,12 @@ struct NotchStatsView: View {
         if vm.isStatsPopoverActive != newState {
             vm.isStatsPopoverActive = newState
             #if DEBUG
-            print("📊 Stats popover state updated: \(newState)")
-            print("   CPU open=\(showingCPUPopover)")
-            print("   Memory open=\(showingMemoryPopover)")
-            print("   GPU open=\(showingGPUPopover)")
-            print("   Network open=\(showingNetworkPopover)")
-            print("   Disk open=\(showingDiskPopover)")
+            Log.debug("📊 Stats popover state updated: \(newState)")
+            Log.debug("   CPU open=\(showingCPUPopover)")
+            Log.debug("   Memory open=\(showingMemoryPopover)")
+            Log.debug("   GPU open=\(showingGPUPopover)")
+            Log.debug("   Network open=\(showingNetworkPopover)")
+            Log.debug("   Disk open=\(showingDiskPopover)")
             #endif
         }
     }

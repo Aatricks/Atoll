@@ -70,21 +70,21 @@ struct IdleAnimationsSettingsSection: View {
                                     showingDeleteAlert = true
                                 },
                                 onEdit: {
-                                    print("🔧 [Edit] Attempting to edit animation: \(animation.name)")
-                                    print("🔧 [Edit] Animation source: \(animation.source)")
+                                    Log.debug("🔧 [Edit] Attempting to edit animation: \(animation.name)")
+                                    Log.debug("🔧 [Edit] Animation source: \(animation.source)")
                                     
                                     // Set state immediately
                                     editingExistingAnimation = animation
                                     
                                     switch animation.source {
                                     case .lottieFile(let url):
-                                        print("🔧 [Edit] Lottie file URL: \(url)")
-                                        print("🔧 [Edit] File exists: \(FileManager.default.fileExists(atPath: url.path))")
+                                        Log.debug("🔧 [Edit] Lottie file URL: \(url)")
+                                        Log.debug("🔧 [Edit] File exists: \(FileManager.default.fileExists(atPath: url.path))")
                                         editorSourceURL = url
                                         editorIsRemote = false
                                         
                                     case .lottieURL(let url):
-                                        print("🔧 [Edit] Lottie URL: \(url)")
+                                        Log.debug("🔧 [Edit] Lottie URL: \(url)")
                                         editorSourceURL = url
                                         editorIsRemote = true
                                     }
@@ -92,7 +92,7 @@ struct IdleAnimationsSettingsSection: View {
                                     // Show editor with slight delay to ensure state is set
                                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                                         showingEditor = true
-                                        print("🔧 [Edit] Sheet should now be visible")
+                                        Log.debug("🔧 [Edit] Sheet should now be visible")
                                     }
                                 }
                             )
@@ -229,7 +229,7 @@ struct IdleAnimationsSettingsSection: View {
             // Show editor with slight delay to ensure state is set
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 showingEditor = true
-                print("📥 [Import] Opening editor for new import")
+                Log.debug("📥 [Import] Opening editor for new import")
             }
             
         case .failure(let error):
@@ -255,7 +255,7 @@ struct IdleAnimationsSettingsSection: View {
         // Show editor with slight delay to ensure state is set
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             showingEditor = true
-            print("📥 [Import] Opening editor for URL import")
+            Log.debug("📥 [Import] Opening editor for URL import")
         }
     }
 }

@@ -169,7 +169,7 @@ final class AmazonMusicController: ObservableObject, MediaControllerProtocol {
                     .trimmingCharacters(in: .whitespacesAndNewlines),
                   !message.isEmpty
             else { return }
-            print("AmazonMusicController [stderr]: \(message)")
+            Log.debug("AmazonMusicController [stderr]: \(message)")
         }
 
         self.process = process

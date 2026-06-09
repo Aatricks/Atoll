@@ -94,7 +94,7 @@ final class SystemChangesObserver: MediaKeyInterceptorDelegate {
         mediaKeyInterceptor.delegate = self
         let tapStarted = mediaKeyInterceptor.start()
         if !tapStarted {
-            NSLog("⚠️ Media key interception unavailable; system HUD will remain visible")
+            Log.debug("⚠️ Media key interception unavailable; system HUD will remain visible")
         }
         mediaKeyInterceptor.configuration = MediaKeyConfiguration(
             interceptVolume: volumeEnabled,
@@ -393,7 +393,7 @@ private final class VolumeFeedbackPlayer {
         if player != nil { return }
         guard let url = Bundle.main.url(forResource: "audio-feedback", withExtension: "m4a") else {
             if !didLogMissingAsset {
-                NSLog("⚠️ audio-feedback.m4a is missing from the app bundle; volume feedback disabled.")
+                Log.debug("⚠️ audio-feedback.m4a is missing from the app bundle; volume feedback disabled.")
                 didLogMissingAsset = true
             }
             return
@@ -406,7 +406,7 @@ private final class VolumeFeedbackPlayer {
             player = audioPlayer
         } catch {
             if !didLogMissingAsset {
-                NSLog("⚠️ Failed to initialize volume feedback player: \(error.localizedDescription)")
+                Log.error("⚠️ Failed to initialize volume feedback player: \(error.localizedDescription)")
                 didLogMissingAsset = true
             }
         }

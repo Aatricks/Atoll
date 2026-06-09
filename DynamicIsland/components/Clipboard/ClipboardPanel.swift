@@ -472,6 +472,6 @@ struct ClipboardPanelItemRow: View {
 
 #Preview {
     ClipboardPanelView {
-        print("Close panel")
+        Log.debug("Close panel")
     }
 }

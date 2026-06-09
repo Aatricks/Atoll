@@ -34,7 +34,7 @@ class IdleAnimationManager {
         // Create directory if it doesn't exist
         try? FileManager.default.createDirectory(at: storageDirectory, withIntermediateDirectories: true)
         
-        print("📁 [IdleAnimationManager] Storage directory: \(storageDirectory.path)")
+        Log.debug("📁 [IdleAnimationManager] Storage directory: \(storageDirectory.path)")
     }
     
     // MARK: - Initialization
@@ -63,7 +63,7 @@ class IdleAnimationManager {
             // First launch - set everything
             Defaults[.customIdleAnimations] = animations
             Defaults[.selectedIdleAnimation] = animations.first
-            print("✅ [IdleAnimationManager] First launch: Initialized with \(animations.count) animations")
+            Log.debug("✅ [IdleAnimationManager] First launch: Initialized with \(animations.count) animations")
         } else {
             // Subsequent launch - ensure all bundled animations are present
             let existingNames = Set(existing.filter { $0.isBuiltIn }.map { $0.name })
@@ -72,7 +72,7 @@ class IdleAnimationManager {
             for bundledAnim in animations where bundledAnim.isBuiltIn {
                 if !existingNames.contains(bundledAnim.name) {
                     existing.insert(bundledAnim, at: existing.firstIndex(where: { !$0.isBuiltIn }) ?? existing.count)
-                    print("➕ [IdleAnimationManager] Added missing bundled animation: \(bundledAnim.name)")
+                    Log.debug("➕ [IdleAnimationManager] Added missing bundled animation: \(bundledAnim.name)")
                 }
             }
             
@@ -89,11 +89,11 @@ class IdleAnimationManager {
                 }
                 if !isValid {
                     Defaults[.selectedIdleAnimation] = existing.first
-                    print("🔄 [IdleAnimationManager] Migrated selection from legacy face to: \(existing.first?.name ?? "nil")")
+                    Log.debug("🔄 [IdleAnimationManager] Migrated selection from legacy face to: \(existing.first?.name ?? "nil")")
                 }
             }
             
-            print("✅ [IdleAnimationManager] Subsequent launch: \(existing.count) total animations")
+            Log.debug("✅ [IdleAnimationManager] Subsequent launch: \(existing.count) total animations")
         }
     }
     
@@ -101,7 +101,7 @@ class IdleAnimationManager {
     
     /// Load animations from the LottieAnimations folder in the bundle
     private func loadBundledAnimations() -> [CustomIdleAnimation]? {
-        print("📦 [IdleAnimationManager] Loading bundled animations...")
+        Log.debug("📦 [IdleAnimationManager] Loading bundled animations...")
         
         // The JSON files are added as individual resources, not in a folder
         let bundledFiles = ["Dog waiting", "Moody Dog", "Orange Cat Peeping", "Reindeer"]
@@ -116,18 +116,18 @@ class IdleAnimationManager {
                     isBuiltIn: true
                 )
                 animations.append(animation)
-                print("✅ [IdleAnimationManager] Loaded bundled animation: \(filename)")
+                Log.debug("✅ [IdleAnimationManager] Loaded bundled animation: \(filename)")
             } else {
-                print("⚠️ [IdleAnimationManager] Could not find bundled animation: \(filename).json")
+                Log.debug("⚠️ [IdleAnimationManager] Could not find bundled animation: \(filename).json")
             }
         }
         
         guard !animations.isEmpty else {
-            print("⚠️ [IdleAnimationManager] No bundled animations found")
+            Log.debug("⚠️ [IdleAnimationManager] No bundled animations found")
             return nil
         }
         
-        print("📦 [IdleAnimationManager] Loaded \(animations.count) bundled animations")
+        Log.debug("📦 [IdleAnimationManager] Loaded \(animations.count) bundled animations")
         return animations
     }
     
@@ -150,12 +150,12 @@ class IdleAnimationManager {
             }
             
             if !animations.isEmpty {
-                print("💾 [IdleAnimationManager] Loaded \(animations.count) stored user animations")
+                Log.debug("💾 [IdleAnimationManager] Loaded \(animations.count) stored user animations")
             }
             return animations.isEmpty ? nil : animations
             
         } catch {
-            print("❌ [IdleAnimationManager] Error loading stored animations: \(error)")
+            Log.error("❌ [IdleAnimationManager] Error loading stored animations: \(error)")
             return nil
         }
     }
@@ -209,11 +209,11 @@ class IdleAnimationManager {
             animations.append(animation)
             Defaults[.customIdleAnimations] = animations
             
-            print("✅ [IdleAnimationManager] Imported local file: \(name)")
+            Log.debug("✅ [IdleAnimationManager] Imported local file: \(name)")
             return .success(animation)
             
         } catch {
-            print("❌ [IdleAnimationManager] Import failed: \(error)")
+            Log.error("❌ [IdleAnimationManager] Import failed: \(error)")
             return .failure(error)
         }
     }
@@ -235,7 +235,7 @@ class IdleAnimationManager {
         animations.append(animation)
         Defaults[.customIdleAnimations] = animations
         
-        print("✅ [IdleAnimationManager] Added remote animation: \(name)")
+        Log.debug("✅ [IdleAnimationManager] Added remote animation: \(name)")
         return .success(animation)
     }
     
@@ -244,7 +244,7 @@ class IdleAnimationManager {
     /// Delete an animation (only user-added ones, not built-in)
     func deleteAnimation(_ animation: CustomIdleAnimation) -> Bool {
         guard !animation.isBuiltIn else {
-            print("⚠️ [IdleAnimationManager] Cannot delete built-in animation")
+            Log.error("⚠️ [IdleAnimationManager] Cannot delete built-in animation")
             return false
         }
         
@@ -261,7 +261,7 @@ class IdleAnimationManager {
             // Only delete if it's in our storage directory (not bundled)
             if url.path.contains(storageDirectory.path) {
                 try? FileManager.default.removeItem(at: url)
-                print("🗑️ [IdleAnimationManager] Deleted file: \(url.lastPathComponent)")
+                Log.debug("🗑️ [IdleAnimationManager] Deleted file: \(url.lastPathComponent)")
             }
         }
         
@@ -270,7 +270,7 @@ class IdleAnimationManager {
             Defaults[.selectedIdleAnimation] = animations.first
         }
         
-        print("✅ [IdleAnimationManager] Deleted animation: \(animation.name)")
+        Log.debug("✅ [IdleAnimationManager] Deleted animation: \(animation.name)")
         return true
     }
     
@@ -295,7 +295,7 @@ class IdleAnimationManager {
             Defaults[.selectedIdleAnimation] = animations[index]
         }
         
-        print("✅ [IdleAnimationManager] Updated animation: \(animation.name)")
+        Log.debug("✅ [IdleAnimationManager] Updated animation: \(animation.name)")
     }
 }
 

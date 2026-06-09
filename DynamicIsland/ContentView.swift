@@ -236,7 +236,7 @@ struct ContentView: View {
     private func logMusicControlEvent(_ message: String) {
 #if DEBUG
         let timestamp = Self.musicControlLogFormatter.string(from: Date())
-        print("[MusicControl] \(timestamp): \(message)")
+        Log.debug("[MusicControl] \(timestamp): \(message)")
 #endif
     }
 

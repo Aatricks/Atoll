@@ -121,7 +121,7 @@ final class LunarManager: ObservableObject {
         isDetected = Self.checkInstallation()
         isRunning = Self.checkRunning()
         if wasRunning != isRunning {
-            NSLog("🌙 Lunar running state changed: running=\(isRunning)")
+            Log.debug("🌙 Lunar running state changed: running=\(isRunning)")
         }
         refreshConnectionState()
     }
@@ -149,7 +149,7 @@ final class LunarManager: ObservableObject {
     private func connectToLunar() {
         guard connection == nil else { return }
         guard let apiKey = Self.retrieveAPIKey() else {
-            NSLog("⚠️ Lunar: failed to retrieve API key from UserDefaults suite '\(Self.lunarDomain)'")
+            Log.error("⚠️ Lunar: failed to retrieve API key from UserDefaults suite '\(Self.lunarDomain)'")
             return
         }
 
@@ -167,7 +167,7 @@ final class LunarManager: ObservableObject {
 
         connection = conn
         conn.start(queue: DispatchQueue.global(qos: .utility))
-        NSLog("🌙 Lunar: connecting to socket on \(host):\(port)…")
+        Log.debug("🌙 Lunar: connecting to socket on \(host):\(port)…")
     }
 
     private func disconnect() {
@@ -182,7 +182,7 @@ final class LunarManager: ObservableObject {
         }
         isConnected = false
         setLunarHideOSD(false)
-        NSLog("⏹ Lunar: socket disconnected")
+        Log.debug("⏹ Lunar: socket disconnected")
     }
 
     private func handleConnectionState(_ state: NWConnection.State, apiKey: String) {
@@ -190,12 +190,12 @@ final class LunarManager: ObservableObject {
         case .ready:
             isConnected = true
             reconnectAttempts = 0
-            NSLog("🌙 Lunar: connected to socket")
+            Log.debug("🌙 Lunar: connected to socket")
             sendListenCommand(apiKey: apiKey)
             receiveMessages()
 
         case .failed(let error):
-            NSLog("🌙 Lunar: connection failed — \(error.localizedDescription)")
+            Log.error("🌙 Lunar: connection failed — \(error.localizedDescription)", .network)
             isConnected = false
             connection?.cancel()
             connection = nil
@@ -205,7 +205,7 @@ final class LunarManager: ObservableObject {
             isConnected = false
 
         case .waiting(let error):
-            NSLog("🌙 Lunar: connection waiting — \(error.localizedDescription)")
+            Log.error("🌙 Lunar: connection waiting — \(error.localizedDescription)")
 
         default:
             break
@@ -221,15 +221,15 @@ final class LunarManager: ObservableObject {
             .joined(separator: separator)
 
         guard let data = message.data(using: .utf8) else {
-            NSLog("⚠️ Lunar: failed to encode listen command")
+            Log.fault("⚠️ Lunar: failed to encode listen command")
             return
         }
 
         conn.send(content: data, completion: .contentProcessed { error in
             if let error {
-                NSLog("⚠️ Lunar: failed to send listen command — \(error.localizedDescription)")
+                Log.error("⚠️ Lunar: failed to send listen command — \(error.localizedDescription)", .network)
             } else {
-                NSLog("🌙 Lunar: listen command sent")
+                Log.debug("🌙 Lunar: listen command sent")
             }
         })
     }
@@ -246,7 +246,7 @@ final class LunarManager: ObservableObject {
             }
 
             if isComplete {
-                NSLog("🌙 Lunar: stream ended")
+                Log.debug("🌙 Lunar: stream ended")
                 Task { @MainActor in
                     self?.isConnected = false
                     self?.connection?.cancel()
@@ -254,7 +254,7 @@ final class LunarManager: ObservableObject {
                     self?.scheduleReconnect()
                 }
             } else if let error {
-                NSLog("⚠️ Lunar: receive error — \(error.localizedDescription)")
+                Log.error("⚠️ Lunar: receive error — \(error.localizedDescription)", .network)
                 Task { @MainActor in
                     self?.isConnected = false
                     self?.connection?.cancel()
@@ -304,7 +304,7 @@ final class LunarManager: ObservableObject {
         let volumeText = data.volume.map { String($0) } ?? "nil"
         let muteText = data.mute.map { String($0) } ?? "nil"
 
-        NSLog(
+        Log.debug(
             "🌙 Lunar routed payload: display=\(data.display) resolvedScreen=\(resolvedScreenText) isExternal=\(isExternal) brightness=\(brightnessText) contrast=\(contrastText) volume=\(volumeText) mute=\(muteText) hasVolumeData=\(hasVolumeData) externalVolumeListener=\(externalVolumeListenerEnabled)"
         )
 
@@ -336,7 +336,7 @@ final class LunarManager: ObservableObject {
                 dispatchVolumeHUD(value: mute ? 0 : 1, isMuted: mute, onScreen: targetScreen)
             }
         } else if hasVolumeData {
-            NSLog("🌙 Lunar volume payload ignored because external volume listener is disabled")
+            Log.debug("🌙 Lunar volume payload ignored because external volume listener is disabled")
         }
     }
 
@@ -409,12 +409,12 @@ final class LunarManager: ObservableObject {
             let index = displayID - 1
             if NSScreen.screens.indices.contains(index) {
                 let fallback = NSScreen.screens[index]
-                NSLog("🌙 Lunar: display=\(displayID) resolved via index fallback to '\(fallback.localizedName)'")
+                Log.debug("🌙 Lunar: display=\(displayID) resolved via index fallback to '\(fallback.localizedName)'")
                 return fallback
             }
         }
 
-        NSLog("🌙 Lunar: unable to resolve display=\(displayID), HUD will show on all screens")
+        Log.error("🌙 Lunar: unable to resolve display=\(displayID), HUD will show on all screens")
         return nil
     }
 
@@ -443,7 +443,7 @@ final class LunarManager: ObservableObject {
         let contrastText = data.contrast.map { String($0) } ?? "nil"
         let volumeText = data.volume.map { String($0) } ?? "nil"
         let muteText = data.mute.map { String($0) } ?? "nil"
-        NSLog(
+        Log.debug(
             "🌙 Lunar decoded payload (\(source)): display=\(data.display) brightness=\(brightnessText) contrast=\(contrastText) volume=\(volumeText) mute=\(muteText) hasVolumeData=\(hasVolumeData)"
         )
     }
@@ -453,7 +453,7 @@ final class LunarManager: ObservableObject {
     private func scheduleReconnect() {
         guard isLunarIntegrationEnabled, isRunning else { return }
         guard reconnectAttempts < Self.maxReconnectAttempts else {
-            NSLog("🌙 Lunar: max reconnect attempts reached, giving up")
+            Log.error("🌙 Lunar: max reconnect attempts reached, giving up", .network)
             return
         }
 
@@ -466,7 +466,7 @@ final class LunarManager: ObservableObject {
         reconnectTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: delay)
             guard !Task.isCancelled, self.isRunning, self.isLunarIntegrationEnabled else { return }
-            NSLog("🌙 Lunar: reconnect attempt \(attempt + 1)/\(Self.maxReconnectAttempts)")
+            Log.debug("🌙 Lunar: reconnect attempt \(attempt + 1)/\(Self.maxReconnectAttempts)")
             self.connectToLunar()
         }
     }
@@ -485,7 +485,7 @@ final class LunarManager: ObservableObject {
                   app.bundleIdentifier == lunarBundleID
             else { return }
             Task { @MainActor in
-                NSLog("🟢 Lunar launched (pid: \(app.processIdentifier))")
+                Log.debug("🟢 Lunar launched (pid: \(app.processIdentifier))")
                 self?.isDetected = true
                 self?.isRunning = true
                 self?.reconnectAttempts = 0
@@ -506,7 +506,7 @@ final class LunarManager: ObservableObject {
                   app.bundleIdentifier == lunarBundleID
             else { return }
             Task { @MainActor in
-                NSLog("🔴 Lunar terminated (pid: \(app.processIdentifier))")
+                Log.debug("🔴 Lunar terminated (pid: \(app.processIdentifier))")
                 self?.isRunning = false
                 self?.disconnect()
             }
@@ -565,10 +565,10 @@ final class LunarManager: ObservableObject {
     /// Synchronous, nonisolated helper so it can also be called from `deinit`.
     nonisolated private static func writeLunarDefault(hideOSD hide: Bool) {
         guard let defaults = UserDefaults(suiteName: lunarDomain) else {
-            NSLog("⚠️ Lunar: unable to open UserDefaults suite '\(lunarDomain)' to set hideOSD")
+            Log.error("⚠️ Lunar: unable to open UserDefaults suite '\(lunarDomain)' to set hideOSD")
             return
         }
         defaults.set(hide, forKey: "hideOSD")
-        NSLog("🌙 Lunar: hideOSD set to \(hide)")
+        Log.debug("🌙 Lunar: hideOSD set to \(hide)")
     }
 }

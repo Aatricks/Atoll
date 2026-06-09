@@ -669,13 +669,13 @@ struct ScreenshotButton: View {
         // Start snipping with direct callback (ScreenshotApp-based approach)
         screenshotTool.startSnipping(type: type) { [weak screenAssistantManager] screenshotURL in
             guard let manager = screenAssistantManager else {
-                print("❌ ScreenshotTool: ScreenAssistantManager deallocated during callback")
+                Log.debug("❌ ScreenshotTool: ScreenAssistantManager deallocated during callback")
                 return
             }
             
-            print("📁 ScreenshotTool: Adding \(type.displayName.lowercased()) screenshot to chat: \(screenshotURL.lastPathComponent)")
+            Log.debug("📁 ScreenshotTool: Adding \(type.displayName.lowercased()) screenshot to chat: \(screenshotURL.lastPathComponent)")
             manager.addFiles([screenshotURL])
-            print("📸 \(type.displayName) screenshot captured and added to chat successfully")
+            Log.debug("📸 \(type.displayName) screenshot captured and added to chat successfully")
         }
     }
 }

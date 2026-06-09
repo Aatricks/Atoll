@@ -39,7 +39,7 @@ class TrayDrop: ObservableObject {
 
         guard let urls = providers.interfaceConvert() else {
             DispatchQueue.main.asyncAndWait { isLoading -= 1 }
-            print("Faield to load items")
+            Log.debug("Faield to load items")
             return
         }
         let dropItems = urls.map { url in
@@ -50,7 +50,7 @@ class TrayDrop: ObservableObject {
             dropItems.forEach { self.items.updateOrInsert($0, at: 0) }
             self.isLoading -= 1
         }
-        print("DONE")
+        Log.debug("DONE")
     }
 
     func cleanExpiredFiles() {

@@ -35,7 +35,7 @@ final class DisplayServicesDynamic {
 
         if handle == nil, let errorPointer = dlerror() {
             let message = String(cString: errorPointer)
-            NSLog("⚠️ DisplayServicesDynamic: dlopen failed - %@", message)
+            Log.error(String(format: "⚠️ DisplayServicesDynamic: dlopen failed - %@", message))
         }
 
         getBrightnessFn = handle.flatMap { dlsym($0, "DisplayServicesGetBrightness") }

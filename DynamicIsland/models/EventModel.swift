@@ -203,7 +203,7 @@ extension EventModel {
             let config = NSWorkspace.OpenConfiguration()
             NSWorkspace.shared.openApplication(at: url, configuration: config) { _, error in
                 if let error = error {
-                    print("Error launching Notion Calendar: \(error.localizedDescription)")
+                    Log.error("Error launching Notion Calendar: \(error.localizedDescription)")
                 }
             }
         }

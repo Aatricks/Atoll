@@ -63,11 +63,11 @@ class SystemOSDManager {
             try await Task.sleep(nanoseconds: 300_000_000) // 300ms
             
             await MainActor.run {
-                print("✅ System HUD re-enabled")
+                Log.debug("✅ System HUD re-enabled")
             }
         } catch {
             await MainActor.run {
-                NSLog("❌ Error while trying to re-enable OSDUIHelper: \(error)")
+                Log.error("❌ Error while trying to re-enable OSDUIHelper: \(error)")
             }
             
             // Fallback: Try to restart the service using launchctl load
@@ -79,11 +79,11 @@ class SystemOSDManager {
                 fallbackTask.waitUntilExit()
                 
                 await MainActor.run {
-                    print("✅ System HUD re-enabled via fallback method")
+                    Log.debug("✅ System HUD re-enabled via fallback method")
                 }
             } catch {
                 await MainActor.run {
-                    NSLog("❌ Fallback method also failed: \(error)")
+                    Log.error("❌ Fallback method also failed: \(error)")
                 }
             }
         }
@@ -119,7 +119,7 @@ class SystemOSDManager {
                 let appeared = await waitForOSDUIHelper(timeoutMillis: 5000)
                 if !appeared {
                     await MainActor.run {
-                        NSLog("⚠️ OSDUIHelper did not appear within timeout; retrying SIGSTOP anyway")
+                        Log.debug("⚠️ OSDUIHelper did not appear within timeout; retrying SIGSTOP anyway")
                     }
                 }
 
@@ -137,11 +137,11 @@ class SystemOSDManager {
             }
 
             await MainActor.run {
-                print("✅ System HUD disabled")
+                Log.debug("✅ System HUD disabled")
             }
         } catch {
             await MainActor.run {
-                NSLog("❌ Error while trying to hide OSDUIHelper: \(error)")
+                Log.error("❌ Error while trying to hide OSDUIHelper: \(error)")
             }
         }
     }
@@ -252,7 +252,7 @@ class SystemOSDManager {
             try stop.run()
             stop.waitUntilExit()
         } catch {
-            NSLog("Suppression watcher: failed to SIGSTOP OSDUIHelper: \(error)")
+            Log.error("Suppression watcher: failed to SIGSTOP OSDUIHelper: \(error)")
         }
     }
 

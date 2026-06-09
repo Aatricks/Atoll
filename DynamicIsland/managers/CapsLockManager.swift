@@ -50,7 +50,7 @@ class CapsLockManager: ObservableObject {
             }
         }
         
-        print("CapsLockManager: ✅ Initialized with Caps Lock \(isCapsLockActive ? "ON" : "OFF")")
+        Log.debug("CapsLockManager: ✅ Initialized with Caps Lock \(isCapsLockActive ? "ON" : "OFF")")
     }
     
     deinit {
@@ -71,7 +71,7 @@ class CapsLockManager: ObservableObject {
             isCapsLockActive = newState
         }
         
-        print("CapsLockManager: Caps Lock \(newState ? "ACTIVATED" : "DEACTIVATED")")
+        Log.debug("CapsLockManager: Caps Lock \(newState ? "ACTIVATED" : "DEACTIVATED")")
         
         // Only show/hide if feature is enabled
         guard Defaults[.enableCapsLockIndicator] else { return }

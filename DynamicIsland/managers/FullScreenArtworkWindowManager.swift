@@ -403,7 +403,7 @@ final class FullScreenArtworkWindowManager: ObservableObject {
         onDismiss = nil
         callback?()
 
-        print("[FullScreenArtworkWindowManager] Original wallpaper restored")
+        Log.debug("[FullScreenArtworkWindowManager] Original wallpaper restored")
     }
 
     // MARK: - Artwork Pre-Cache
@@ -466,7 +466,7 @@ final class FullScreenArtworkWindowManager: ObservableObject {
         }
 
         let canSuspend = isShowing && isLiveWallpaperAllowed && activeLiveWallpaperFingerprint != nil
-        print("[FullScreenArtworkWindowManager] playback state -> isPlaying=\(isPlaying) showing=\(isShowing) liveAllowed=\(isLiveWallpaperAllowed) fingerprint=\(activeLiveWallpaperFingerprint ?? "nil")")
+        Log.debug("[FullScreenArtworkWindowManager] playback state -> isPlaying=\(isPlaying) showing=\(isShowing) liveAllowed=\(isLiveWallpaperAllowed) fingerprint=\(activeLiveWallpaperFingerprint ?? "nil")")
 
         if isPlaying {
             resumeWallpaperAgentIfNeeded()
@@ -484,7 +484,7 @@ final class FullScreenArtworkWindowManager: ObservableObject {
             }
         }
         hasSuspendedWallpaperAgent = anySucceeded
-        print("[FullScreenArtworkWindowManager] SIGSTOP wallpaper processes -> anySucceeded=\(anySucceeded)")
+        Log.debug("[FullScreenArtworkWindowManager] SIGSTOP wallpaper processes -> anySucceeded=\(anySucceeded)")
     }
 
     private func resumeWallpaperAgentIfNeeded() {
@@ -493,7 +493,7 @@ final class FullScreenArtworkWindowManager: ObservableObject {
             _ = signalProcess(name: name, signalFlag: "-CONT")
         }
         hasSuspendedWallpaperAgent = false
-        print("[FullScreenArtworkWindowManager] SIGCONT wallpaper processes")
+        Log.debug("[FullScreenArtworkWindowManager] SIGCONT wallpaper processes")
     }
 
     @discardableResult
@@ -508,7 +508,7 @@ final class FullScreenArtworkWindowManager: ObservableObject {
             task.waitUntilExit()
             return task.terminationStatus == 0
         } catch {
-            print("[FullScreenArtworkWindowManager] killall \(signalFlag) \(name) threw: \(error)")
+            Log.error("[FullScreenArtworkWindowManager] killall \(signalFlag) \(name) threw: \(error)")
             return false
         }
     }
@@ -571,7 +571,7 @@ final class FullScreenArtworkWindowManager: ObservableObject {
                 showWallpaperTransition(on: screen, imageURL: wallpaperURL)
 
                 guard applyArtworkToPlist(imageURL: wallpaperURL) else {
-                    print("[FullScreenArtworkWindowManager] Failed to patch plist")
+                    Log.error("[FullScreenArtworkWindowManager] Failed to patch plist")
                     hideWallpaperTransition()
                     return
                 }
@@ -615,7 +615,7 @@ final class FullScreenArtworkWindowManager: ObservableObject {
             scheduleWallpaperTransitionHide(after: .milliseconds(900))
         }
 
-        print("[FullScreenArtworkWindowManager] Artwork applied as wallpaper")
+        Log.debug("[FullScreenArtworkWindowManager] Artwork applied as wallpaper")
     }
 
     private func refreshPresentationForCurrentTrack() {
@@ -895,7 +895,7 @@ final class FullScreenArtworkWindowManager: ObservableObject {
             showWallpaperTransition(on: screen, imageURL: url)
         }
         guard applyArtworkToPlist(imageURL: url) else {
-            print("[FullScreenArtworkWindowManager] Failed to apply deferred static fallback")
+            Log.error("[FullScreenArtworkWindowManager] Failed to apply deferred static fallback")
             hideWallpaperTransition()
             return
         }
@@ -984,7 +984,7 @@ final class FullScreenArtworkWindowManager: ObservableObject {
                 self.pendingFallbackWallpaperKey = nil
                 self.restartWallpaperAgent()
                 self.scheduleHideVideoWindow(after: .milliseconds(950), expectedURL: videoURL)
-                print("[FullScreenArtworkWindowManager] Live wallpaper applied")
+                Log.debug("[FullScreenArtworkWindowManager] Live wallpaper applied")
             }
         }
     }
@@ -1761,7 +1761,7 @@ final class FullScreenArtworkWindowManager: ObservableObject {
             try fm.copyItem(at: backupPlistURL, to: wallpaperPlistURL)
             try fm.removeItem(at: backupPlistURL)
         } catch {
-            print("[FullScreenArtworkWindowManager] Failed to restore plist: \(error)")
+            Log.error("[FullScreenArtworkWindowManager] Failed to restore plist: \(error)")
         }
 
         restoreLiveWallpaperResources()

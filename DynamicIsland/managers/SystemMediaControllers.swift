@@ -136,14 +136,14 @@ final class SystemVolumeController {
             var volume = clamped
             let status = setData(selector: kAudioDevicePropertyVolumeScalar, data: &volume)
             if status != noErr {
-                NSLog("⚠️ Failed to set volume: \(status)")
+                Log.error("⚠️ Failed to set volume: \(status)")
             }
         } else {
             for element in elements {
                 var volume = clamped
                 let status = setData(selector: kAudioDevicePropertyVolumeScalar, element: element, data: &volume)
                 if status != noErr {
-                    NSLog("⚠️ Failed to set volume for element \(element): \(status)")
+                    Log.error("⚠️ Failed to set volume for element \(element): \(status)")
                 } else {
                     cache(element: element, for: kAudioDevicePropertyVolumeScalar)
                 }
@@ -159,7 +159,7 @@ final class SystemVolumeController {
         if elements.isEmpty {
             let status = setData(selector: kAudioDevicePropertyMute, data: &muteFlag)
             if status != noErr {
-                NSLog("⚠️ Failed to set mute state: \(status)")
+                Log.error("⚠️ Failed to set mute state: \(status)")
             }
             return
         }
@@ -168,7 +168,7 @@ final class SystemVolumeController {
             var value = muteFlag
             let status = setData(selector: kAudioDevicePropertyMute, element: element, data: &value)
             if status != noErr {
-                NSLog("⚠️ Failed to set mute state for element \(element): \(status)")
+                Log.error("⚠️ Failed to set mute state for element \(element): \(status)")
             } else {
                 cache(element: element, for: kAudioDevicePropertyMute)
             }
@@ -187,7 +187,7 @@ final class SystemVolumeController {
         )
         let status = AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &deviceID)
         if status != noErr {
-            NSLog("⚠️ Unable to fetch default audio device: \(status)")
+            Log.error("⚠️ Unable to fetch default audio device: \(status)")
         }
         return deviceID
     }
@@ -208,7 +208,7 @@ final class SystemVolumeController {
             self.handleDefaultDeviceChanged()
         }
         if status != noErr {
-            NSLog("⚠️ Failed to install default device listener: \(status)")
+            Log.error("⚠️ Failed to install default device listener: \(status)")
         }
         listenersInstalled = true
     }
@@ -261,7 +261,7 @@ final class SystemVolumeController {
             var volume = Float32(0)
             let status = getData(selector: kAudioDevicePropertyVolumeScalar, data: &volume)
             if status != noErr {
-                NSLog("⚠️ Unable to fetch volume: \(status)")
+                Log.error("⚠️ Unable to fetch volume: \(status)")
             }
             return volume
         }
@@ -293,7 +293,7 @@ final class SystemVolumeController {
         var fallback = Float32(0)
         let status = getData(selector: kAudioDevicePropertyVolumeScalar, data: &fallback)
         if status != noErr {
-            NSLog("⚠️ Unable to fetch fallback volume: \(status)")
+            Log.error("⚠️ Unable to fetch fallback volume: \(status)")
         }
         return fallback
     }
@@ -501,9 +501,9 @@ final class SystemBrightnessController {
 
     func start() {
         if coreBrightnessClient.isAvailable {
-            NSLog("✅ SystemBrightnessController: CoreBrightnessDisplayClient is available — using notification-driven detection")
+            Log.debug("✅ SystemBrightnessController: CoreBrightnessDisplayClient is available — using notification-driven detection")
         } else {
-            NSLog("⚠️ SystemBrightnessController: CoreBrightnessDisplayClient unavailable; will rely on DisplayServices / IODisplay + polling fallback")
+            Log.debug("⚠️ SystemBrightnessController: CoreBrightnessDisplayClient unavailable; will rely on DisplayServices / IODisplay + polling fallback")
         }
         notifyCurrentBrightness()
         // Only start polling as a fallback when CoreBrightness notifications
@@ -654,7 +654,7 @@ final class SystemBrightnessController {
         let status = IODisplaySetFloatParameter(service, 0, kIODisplayBrightnessKey as CFString, clamped)
         IOObjectRelease(service)
         if status != kIOReturnSuccess {
-            NSLog("⚠️ Failed to set brightness via IODisplay: \(status)")
+            Log.error("⚠️ Failed to set brightness via IODisplay: \(status)")
         }
     }
 
@@ -707,11 +707,11 @@ final class SystemBrightnessController {
         // Attempt to refresh display ID in case the main display changed
         displayID = CGMainDisplayID()
         guard let retry = DisplayServicesDynamic.shared.setBrightness(displayID: displayID, value: value) else {
-            NSLog("⚠️ DisplayServicesSetBrightness unavailable after display refresh")
+            Log.debug("⚠️ DisplayServicesSetBrightness unavailable after display refresh")
             return false
         }
         if retry != kIOReturnSuccess {
-            NSLog("⚠️ DisplayServicesSetBrightness failed: \(retry)")
+            Log.error("⚠️ DisplayServicesSetBrightness failed: \(retry)")
             return false
         }
         return true
@@ -726,13 +726,13 @@ final class SystemBrightnessController {
         }
         displayID = CGMainDisplayID()
         guard let retry = DisplayServicesDynamic.shared.getBrightness(displayID: displayID) else {
-            NSLog("⚠️ DisplayServicesGetBrightness unavailable after display refresh")
+            Log.debug("⚠️ DisplayServicesGetBrightness unavailable after display refresh")
             return nil
         }
         if retry.status == kIOReturnSuccess {
             return retry.value
         }
-        NSLog("⚠️ DisplayServicesGetBrightness failed: \(retry.status)")
+        Log.error("⚠️ DisplayServicesGetBrightness failed: \(retry.status)")
         return nil
     }
 
@@ -764,7 +764,7 @@ final class SystemBrightnessController {
 
     private func startPolling() {
         guard pollTimer == nil else { return }
-        NSLog("ℹ️ SystemBrightnessController: Starting polling-driven brightness detection as fallback (interval: %.2fs)", pollInterval)
+        Log.debug(String(format: "ℹ️ SystemBrightnessController: Starting polling-driven brightness detection as fallback (interval: %.2fs)", pollInterval))
         pollTimer = Timer.scheduledTimer(withTimeInterval: pollInterval, repeats: true) { [weak self] _ in
             guard let self else { return }
             // Skip polling while an animation is actively running — the
@@ -776,7 +776,7 @@ final class SystemBrightnessController {
             if self.userInitiatedBrightnessChange {
                 // User recently pressed a brightness key — show the HUD.
                 if !self.didLogPollingFallback {
-                    NSLog("ℹ️ SystemBrightnessController: Brightness change detected via polling fallback (value: %.3f)", system)
+                    Log.debug(String(format: "ℹ️ SystemBrightnessController: Brightness change detected via polling fallback (value: %.3f)", system))
                     self.didLogPollingFallback = true
                 }
                 self.emitBrightnessChange(value: system)

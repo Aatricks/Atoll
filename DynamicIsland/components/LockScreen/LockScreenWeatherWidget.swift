@@ -785,9 +785,9 @@ struct LockScreenWeatherWidget: View {
 			nsColor.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
 			let hex = String(format: "#%02X%02X%02X", Int(red * 255), Int(green * 255), Int(blue * 255))
 			let alphaText = String(format: "%.2f", alpha)
-			NSLog("LockScreenCalendarRow badge color: %@ alpha=%@ style=%@ critical=%@ reason=%@", hex, alphaText, lockScreenReminderChipStyle.rawValue, String(isReminderCritical(event)), reason)
+			Log.debug(String(format: "LockScreenCalendarRow badge color: %@ alpha=%@ style=%@ critical=%@ reason=%@", hex, alphaText, lockScreenReminderChipStyle.rawValue, String(isReminderCritical(event)), reason))
 		} else {
-			NSLog("LockScreenCalendarRow badge color: <unavailable> style=%@ critical=%@ reason=%@", lockScreenReminderChipStyle.rawValue, String(isReminderCritical(event)), reason)
+			Log.debug(String(format: "LockScreenCalendarRow badge color: <unavailable> style=%@ critical=%@ reason=%@", lockScreenReminderChipStyle.rawValue, String(isReminderCritical(event)), reason))
 		}
 	}
 

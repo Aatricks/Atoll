@@ -86,7 +86,7 @@ class ColorPickerManager: ObservableObject {
     func startColorPicking() {
         guard !isPickingColor else { return }
         
-        print("ColorPicker: Starting color picking with NSColorSampler...")
+        Log.debug("ColorPicker: Starting color picking with NSColorSampler...")
         
         isPickingColor = true
         isShowingPanel = false
@@ -100,7 +100,7 @@ class ColorPickerManager: ObservableObject {
                 self.isPickingColor = false
                 
                 if let color = pickedColor {
-                    print("ColorPicker: Successfully picked color - R:\(color.redComponent) G:\(color.greenComponent) B:\(color.blueComponent)")
+                    Log.debug("ColorPicker: Successfully picked color - R:\(color.redComponent) G:\(color.greenComponent) B:\(color.blueComponent)")
                     
                     // Convert to sRGB for consistent color handling
                     if let sRGBColor = color.usingColorSpace(.sRGB) {
@@ -114,14 +114,14 @@ class ColorPickerManager: ObservableObject {
                         }
                     }
                 } else {
-                    print("ColorPicker: Color picking cancelled by user")
+                    Log.debug("ColorPicker: Color picking cancelled by user")
                 }
             }
         }
     }
     
     func stopColorPicking() {
-        print("ColorPicker: Stopping color picking...")
+        Log.debug("ColorPicker: Stopping color picking...")
         isPickingColor = false
     }
     
@@ -132,7 +132,7 @@ class ColorPickerManager: ObservableObject {
     // MARK: - Color Feedback
     
     private func showColorPickedFeedback(for color: PickedColor) {
-        print("ColorPicker: Showing color picked feedback for \(color.hexString)")
+        Log.debug("ColorPicker: Showing color picked feedback for \(color.hexString)")
         lastPickedColor = color
         showColorPickedFeedback = true
         
@@ -143,7 +143,7 @@ class ColorPickerManager: ObservableObject {
         
         // Hide feedback after 2 seconds
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            print("ColorPicker: Hiding color picked feedback")
+            Log.debug("ColorPicker: Hiding color picked feedback")
             self.showColorPickedFeedback = false
         }
     }
@@ -184,7 +184,7 @@ class ColorPickerManager: ObservableObject {
         pasteboard.setString(text, forType: .string)
         
         // Always show confirmation in console for now
-        print("Copied to clipboard: \(text)")
+        Log.debug("Copied to clipboard: \(text)")
     }
     
     func copyColorToClipboard(_ color: PickedColor, format: ColorFormat) {

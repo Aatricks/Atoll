@@ -283,7 +283,7 @@ func applyProfileSettings(_ profiles: Set<String>) {
         Defaults[.lockScreenMusicLiquidGlassVariant] = .v11
     }
     
-    print("✅ Applied profile settings for: \(profiles.joined(separator: ", "))")
+    Log.debug("✅ Applied profile settings for: \(profiles.joined(separator: ", "))")
 }
 
 /// Returns `true` when the main screen has a physical notch (safe area insets > 0).
@@ -294,6 +294,6 @@ private func mainScreenHasNotch() -> Bool {
 
 #Preview {
     ProfileSelectionView(onContinue: { profiles in
-        print("Selected profiles: \(profiles)")
+        Log.debug("Selected profiles: \(profiles)")
     })
 }

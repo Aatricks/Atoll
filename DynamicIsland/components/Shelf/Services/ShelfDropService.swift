@@ -45,7 +45,7 @@ struct ShelfDropService {
             let resolvedURL = fileURL.standardizedFileURL
             guard resolvedURL.isFileURL else { continue }
             guard fileManager.fileExists(atPath: resolvedURL.path) else {
-                NSLog("⚠️ Ignoring non-existent file URL: \(resolvedURL.path)")
+                Log.debug("⚠️ Ignoring non-existent file URL: \(resolvedURL.path)")
                 continue
             }
 

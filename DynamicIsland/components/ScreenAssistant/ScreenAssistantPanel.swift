@@ -258,6 +258,6 @@ struct ApiKeyAlertView: View {
 
 #Preview {
     ScreenAssistantPanelView {
-        print("Close panel")
+        Log.debug("Close panel")
     }
 }

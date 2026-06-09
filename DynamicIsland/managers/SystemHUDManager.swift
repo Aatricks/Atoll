@@ -292,7 +292,7 @@ class SystemHUDManager {
         // Force disable system HUD to ensure no duplicates
         SystemOSDManager.disableSystemHUD()
         
-        print("System observer started (HUD: \(Defaults[.enableSystemHUD]), OSD: \(Defaults[.enableCustomOSD]), Vertical: \(Defaults[.enableVerticalHUD]), ThirdPartyDDC: \(Defaults[.enableThirdPartyDDCIntegration]), Provider: \(Defaults[.thirdPartyDDCProvider].displayName), ExternalVolumeListener: \(Defaults[.enableExternalVolumeControlListener]))")
+        Log.debug("System observer started (HUD: \(Defaults[.enableSystemHUD]), OSD: \(Defaults[.enableCustomOSD]), Vertical: \(Defaults[.enableVerticalHUD]), ThirdPartyDDC: \(Defaults[.enableThirdPartyDDCIntegration]), Provider: \(Defaults[.thirdPartyDDCProvider].displayName), ExternalVolumeListener: \(Defaults[.enableExternalVolumeControlListener]))")
         isSystemOperationInProgress = false
     }
     
@@ -307,7 +307,7 @@ class SystemHUDManager {
         // Re-enable system HUD when we stop observing
         SystemOSDManager.enableSystemHUD()
         
-        print("System observer stopped")
+        Log.debug("System observer stopped")
         isSystemOperationInProgress = false
     }
     

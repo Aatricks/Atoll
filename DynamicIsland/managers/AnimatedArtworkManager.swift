@@ -86,7 +86,7 @@ actor AnimatedArtworkManager {
             guard let song = match else { return nil }
             return song.id.rawValue
         } catch {
-            print("[AnimatedArtworkManager] Search failed: \(error)")
+            Log.error("[AnimatedArtworkManager] Search failed: \(error)")
             return nil
         }
     }
@@ -142,7 +142,7 @@ actor AnimatedArtworkManager {
 
             return nil
         } catch {
-            print("[AnimatedArtworkManager] Editorial video fetch failed: \(error)")
+            Log.error("[AnimatedArtworkManager] Editorial video fetch failed: \(error)")
             return nil
         }
     }

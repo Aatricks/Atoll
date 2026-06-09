@@ -99,7 +99,7 @@ final class MediaChecker: Sendable {
         // symbol not found). Treat this as an execution failure rather than
         // reporting deprecated, since perl's fail() also uses exit(1).
         if process.terminationStatus != 0, !stderrOutput.isEmpty {
-            print("MediaChecker: script error (exit \(process.terminationStatus)): \(stderrOutput)")
+            Log.error("MediaChecker: script error (exit \(process.terminationStatus)): \(stderrOutput)")
             throw MediaCheckerError.processExecutionFailed
         }
 

@@ -90,11 +90,11 @@ final class LockScreenWeatherManager: ObservableObject {
 
     @discardableResult
     func refresh(force: Bool = false) async -> LockScreenWeatherSnapshot? {
-        NSLog("LockScreenWeatherManager: refresh requested (force=%@)", force ? "true" : "false")
+        Log.debug(String(format: "LockScreenWeatherManager: refresh requested (force=%@)", force ? "true" : "false"))
         let interval = Defaults[.lockScreenWeatherRefreshInterval]
         if !force, let lastFetchDate, Date().timeIntervalSince(lastFetchDate) < interval {
             let remaining = interval - Date().timeIntervalSince(lastFetchDate)
-            NSLog("LockScreenWeatherManager: skipping refresh (%.0f s remaining until next fetch)", max(remaining, 0))
+            Log.debug(String(format: "LockScreenWeatherManager: skipping refresh (%.0f s remaining until next fetch)", max(remaining, 0)))
             if let payload = latestWeatherPayload {
                 if Defaults[.lockScreenBatteryShowsBluetooth] {
                     BluetoothAudioManager.shared.refreshConnectedDeviceBatteries()
@@ -113,11 +113,7 @@ final class LockScreenWeatherManager: ObservableObject {
         do {
             let location = await locationProvider.currentLocation()
             let provider = Defaults[.lockScreenWeatherProviderSource]
-            NSLog(
-                "LockScreenWeatherManager: fetching weather from %@ (location %@)",
-                provider.displayName,
-                location != nil ? "available" : "missing"
-            )
+            Log.debug(String(format: "LockScreenWeatherManager: fetching weather from %@ (location %@)", provider.displayName, location != nil ? "available" : "missing"))
             let payload = try await fetchWeatherPayload(location: location)
             latestWeatherPayload = payload
             if Defaults[.lockScreenBatteryShowsBluetooth] {
@@ -127,10 +123,10 @@ final class LockScreenWeatherManager: ObservableObject {
             self.snapshot = snapshot
             lastFetchDate = Date()
             deliver(snapshot, forceShow: false)
-            NSLog("LockScreenWeatherManager: weather refresh succeeded")
+            Log.debug("LockScreenWeatherManager: weather refresh succeeded")
             return snapshot
         } catch {
-            NSLog("LockScreenWeatherManager: failed to fetch weather - \(error.localizedDescription)")
+            Log.error("LockScreenWeatherManager: failed to fetch weather - \(error.localizedDescription)")
 
             let providerSource = Defaults[.lockScreenWeatherProviderSource]
             let showsCharging = Defaults[.lockScreenBatteryShowsCharging]
@@ -172,11 +168,11 @@ final class LockScreenWeatherManager: ObservableObject {
             return try await provider.fetchSnapshot(location: location, source: primarySource)
         } catch {
             if primarySource == .openMeteo {
-                NSLog("LockScreenWeatherManager: Open Meteo fetch failed - %@. Falling back to wttr.in", error.localizedDescription)
+                Log.error(String(format: "LockScreenWeatherManager: Open Meteo fetch failed - %@. Falling back to wttr.in", error.localizedDescription))
                 do {
                     return try await provider.fetchSnapshot(location: location, source: .wttr)
                 } catch {
-                    NSLog("LockScreenWeatherManager: wttr.in fallback also failed - %@", error.localizedDescription)
+                    Log.error(String(format: "LockScreenWeatherManager: wttr.in fallback also failed - %@", error.localizedDescription))
                     throw error
                 }
             }
@@ -255,7 +251,7 @@ final class LockScreenWeatherManager: ObservableObject {
                 guard let self else { return }
                 self.latestWeatherPayload = nil
                 Task { @MainActor in
-                    NSLog("LockScreenWeatherManager: provider changed, forcing refresh")
+                    Log.debug("LockScreenWeatherManager: provider changed, forcing refresh")
                     _ = await self.refresh(force: true)
                 }
             }
@@ -266,7 +262,7 @@ final class LockScreenWeatherManager: ObservableObject {
                 guard let self else { return }
                 self.latestWeatherPayload = nil
                 Task { @MainActor in
-                    NSLog("LockScreenWeatherManager: temperature unit changed, forcing refresh")
+                    Log.debug("LockScreenWeatherManager: temperature unit changed, forcing refresh")
                     _ = await self.refresh(force: true)
                 }
             }
@@ -277,7 +273,7 @@ final class LockScreenWeatherManager: ObservableObject {
                 guard let self else { return }
                 self.latestWeatherPayload = nil
                 Task { @MainActor in
-                    NSLog("LockScreenWeatherManager: AQI scale changed, forcing refresh")
+                    Log.debug("LockScreenWeatherManager: AQI scale changed, forcing refresh")
                     _ = await self.refresh(force: true)
                 }
             }
@@ -288,7 +284,7 @@ final class LockScreenWeatherManager: ObservableObject {
                 guard let self else { return }
                 Task { @MainActor in
                     if change.newValue {
-                        NSLog("LockScreenWeatherManager: widget enabled, triggering refresh")
+                        Log.debug("LockScreenWeatherManager: widget enabled, triggering refresh")
                         self.locationProvider.prepareAuthorization()
                         _ = await self.refresh(force: true)
                     } else {

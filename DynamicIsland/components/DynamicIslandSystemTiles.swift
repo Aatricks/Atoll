@@ -72,7 +72,7 @@ func logout() {
         if let scriptObject = NSAppleScript(source: appleScript) {
             scriptObject.executeAndReturnError(&error)
             if let error = error {
-                print("Error: \(error)")
+                Log.error("Error: \(error)")
             }
         }
     }

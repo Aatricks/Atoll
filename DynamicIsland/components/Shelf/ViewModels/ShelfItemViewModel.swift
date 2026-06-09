@@ -463,7 +463,7 @@ final class ShelfItemViewModel: ObservableObject {
                                 try await NSWorkspace.shared.open(allSelectedURLs, withApplicationAt: appURL, configuration: config)
                             }
                         } catch {
-                            print("❌ Failed to open with application: \(error.localizedDescription)")
+                            Log.error("❌ Failed to open with application: \(error.localizedDescription)")
                         }
                 }
                 return
@@ -543,7 +543,7 @@ final class ShelfItemViewModel: ObservableObject {
                     if !fileURLs.isEmpty {
                         // Start security-scoped access for all URLs and keep them active
                         ShelfItemViewModel.copiedURLs = fileURLs.filter { $0.startAccessingSecurityScopedResource() }
-                        NSLog("🔐 Started security-scoped access for \(ShelfItemViewModel.copiedURLs.count) copied files")
+                        Log.debug("🔐 Started security-scoped access for \(ShelfItemViewModel.copiedURLs.count) copied files")
                         
                         // Write to pasteboard
                         pb.writeObjects(fileURLs as [NSURL])
@@ -588,7 +588,7 @@ final class ShelfItemViewModel: ObservableObject {
                             }
                         }
                     } catch {
-                        print("❌ Compress failed: \(error)")
+                        Log.error("❌ Compress failed: \(error)")
                     }
                 }
                 
@@ -739,10 +739,10 @@ final class ShelfItemViewModel: ObservableObject {
                             if alwaysCheckbox.state == .on, let bundleID = Bundle(url: appURL)?.bundleIdentifier {
                                 if let contentType = (try? fileURL.resourceValues(forKeys: [.contentTypeKey]))?.contentType {
                                     let status = LSSetDefaultRoleHandlerForContentType(contentType.identifier as CFString, LSRolesMask.all, bundleID as CFString)
-                                    if status != noErr { print("⚠️ Failed to set default handler for \(contentType.identifier): \(status)") }
+                                    if status != noErr { Log.debug("⚠️ Failed to set default handler for \(contentType.identifier): \(status)") }
                                 } else if let scheme = fileURL.scheme {
                                     let status = LSSetDefaultHandlerForURLScheme(scheme as CFString, bundleID as CFString)
-                                    if status != noErr { print("⚠️ Failed to set default handler for scheme \(scheme): \(status)") }
+                                    if status != noErr { Log.debug("⚠️ Failed to set default handler for scheme \(scheme): \(status)") }
                                 }
                             }
 
@@ -754,7 +754,7 @@ final class ShelfItemViewModel: ObservableObject {
                                 try await NSWorkspace.shared.open([fileURL], withApplicationAt: appURL, configuration: config)
                             }
                         } catch {
-                            print("❌ Failed to open with application: \(error.localizedDescription)")
+                            Log.error("❌ Failed to open with application: \(error.localizedDescription)")
                         }
                     }
                 }
@@ -782,7 +782,7 @@ final class ShelfItemViewModel: ObservableObject {
                         if response == .OK, let newURL = savePanel.url {
                             Task {
                                 do {
-                                    NSLog("🔐 Rename: moving from \(fileURL.path) to \(newURL.path) (securityScope=\(didStart))")
+                                    Log.debug("🔐 Rename: moving from \(fileURL.path) to \(newURL.path) (securityScope=\(didStart))")
 
                                     try FileManager.default.moveItem(at: fileURL, to: newURL)
 
@@ -790,7 +790,7 @@ final class ShelfItemViewModel: ObservableObject {
                                         ShelfStateViewModel.shared.updateBookmark(for: item, bookmark: newBookmark.data)
                                     }
                                 } catch {
-                                    print("❌ Failed to rename file: \(error.localizedDescription)")
+                                    Log.error("❌ Failed to rename file: \(error.localizedDescription)")
                                 }
                                 if didStart { fileURL.stopAccessingSecurityScopedResource() }
                             }
@@ -826,7 +826,7 @@ final class ShelfItemViewModel: ObservableObject {
                         }
                     }
                 } catch {
-                    print("❌ Failed to remove background: \(error.localizedDescription)")
+                    Log.error("❌ Failed to remove background: \(error.localizedDescription)")
                     await showErrorAlert(title: "Background Removal Failed", message: error.localizedDescription)
                 }
             }
@@ -856,7 +856,7 @@ final class ShelfItemViewModel: ObservableObject {
                         }
                     }
                 } catch {
-                    print("❌ Failed to create PDF: \(error.localizedDescription)")
+                    Log.error("❌ Failed to create PDF: \(error.localizedDescription)")
                     await showErrorAlert(title: "PDF Creation Failed", message: error.localizedDescription)
                 }
             }
@@ -1064,7 +1064,7 @@ final class ShelfItemViewModel: ObservableObject {
                             }
                         }
                     } catch {
-                        print("❌ Failed to convert image: \(error.localizedDescription)")
+                        Log.error("❌ Failed to convert image: \(error.localizedDescription)")
                         showErrorAlert(title: "Image Conversion Failed", message: error.localizedDescription)
                     }
                 }

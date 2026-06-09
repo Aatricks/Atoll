@@ -57,7 +57,7 @@ final class SystemKeyboardBacklightController {
                 let level = (try? KeyboardBrightnessSensor.currentLevel()) ?? clamped
                 self.emitChange(level: level)
             } catch {
-                NSLog("⚠️ Failed to set keyboard backlight: \(error)")
+                Log.error("⚠️ Failed to set keyboard backlight: \(error)")
             }
         }
     }

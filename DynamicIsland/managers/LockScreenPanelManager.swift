@@ -47,7 +47,7 @@ class LockScreenPanelManager {
     private var cancellables = Set<AnyCancellable>()
 
     private init() {
-        print("[\(timestamp())] LockScreenPanelManager: initialized")
+        Log.debug("[\(timestamp())] LockScreenPanelManager: initialized")
         registerScreenChangeObservers()
         observeDefaultChanges()
     }
@@ -99,16 +99,16 @@ class LockScreenPanelManager {
     }
 
     func showPanel() {
-        print("[\(timestamp())] LockScreenPanelManager: showPanel")
+        Log.debug("[\(timestamp())] LockScreenPanelManager: showPanel")
 
         guard Defaults[.enableLockScreenMediaWidget] else {
-            print("[\(timestamp())] LockScreenPanelManager: widget disabled")
+            Log.debug("[\(timestamp())] LockScreenPanelManager: widget disabled")
             hidePanel()
             return
         }
 
         guard let screen = currentScreen() else {
-            print("[\(timestamp())] LockScreenPanelManager: no main screen available")
+            Log.debug("[\(timestamp())] LockScreenPanelManager: no main screen available")
             return
         }
 
@@ -178,7 +178,7 @@ class LockScreenPanelManager {
             self.panelAnimator.isPresented = true
         }
 
-        print("[\(timestamp())] LockScreenPanelManager: panel visible")
+        Log.debug("[\(timestamp())] LockScreenPanelManager: panel visible")
     }
 
     func updatePanelSize(expanded: Bool, additionalHeight: CGFloat = 0, animated: Bool = true) {
@@ -241,13 +241,13 @@ class LockScreenPanelManager {
     }
 
     func hidePanel() {
-        print("[\(timestamp())] LockScreenPanelManager: hidePanel")
+        Log.debug("[\(timestamp())] LockScreenPanelManager: hidePanel")
 
         panelAnimator.isPresented = false
         hideTask?.cancel()
 
         guard let window = panelWindow else {
-            print("LockScreenPanelManager: no panel to hide")
+            Log.debug("LockScreenPanelManager: no panel to hide")
             publishPanelFrame(nil)
             return
         }
@@ -259,7 +259,7 @@ class LockScreenPanelManager {
                 window?.orderOut(nil)
                 window?.contentView = nil
                 self.publishPanelFrame(nil)
-                print("[\(self.timestamp())] LockScreenPanelManager: panel hidden")
+                Log.debug("[\(self.timestamp())] LockScreenPanelManager: panel hidden")
             }
         }
     }
@@ -274,7 +274,7 @@ class LockScreenPanelManager {
         updatePanelSize(expanded: isPanelExpanded, additionalHeight: currentAdditionalHeight, animated: false)
         LockScreenTimerWidgetManager.shared.notifyMusicPanelFrameChanged(animated: false)
 
-        print("[\(timestamp())] LockScreenPanelManager: realigned window due to \(reason)")
+        Log.debug("[\(timestamp())] LockScreenPanelManager: realigned window due to \(reason)")
     }
 
     private func observeDefaultChanges() {

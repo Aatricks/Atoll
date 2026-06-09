@@ -63,7 +63,7 @@ struct ClipboardItem: Identifiable, Codable {
             self.imageFileName = fileName
             self.preview = "Image (\(ByteCountFormatter.string(fromByteCount: Int64(imageData.count), countStyle: .file)))"
         } catch {
-            print("Failed to save image data: \(error)")
+            Log.error("Failed to save image data: \(error)")
             self.imageFileName = nil
             self.preview = "Image (failed to save)"
         }

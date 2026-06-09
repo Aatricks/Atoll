@@ -55,7 +55,7 @@ final class CoreBrightnessDisplayClient {
             }
         }
         guard loaded else {
-            NSLog("⚠️ CoreBrightnessDisplayClient: CoreBrightness.framework could not be loaded (macOS %@)", osVersion)
+            Log.debug(String(format: "⚠️ CoreBrightnessDisplayClient: CoreBrightness.framework could not be loaded (macOS %@)", osVersion))
             return
         }
 
@@ -63,14 +63,13 @@ final class CoreBrightnessDisplayClient {
         for name in Self.candidateClassNames {
             if let cls = NSClassFromString(name) as? NSObject.Type {
                 resolvedClass = cls
-                NSLog("✅ CoreBrightnessDisplayClient: Resolved class '%@' (macOS %@)", name, osVersion)
+                Log.debug(String(format: "✅ CoreBrightnessDisplayClient: Resolved class '%@' (macOS %@)", name, osVersion))
                 break
             }
         }
 
         guard let cls = resolvedClass else {
-            NSLog("⚠️ CoreBrightnessDisplayClient: None of the known class names found: %@ (macOS %@)",
-                  Self.candidateClassNames.joined(separator: ", "), osVersion)
+            Log.debug(String(format: "⚠️ CoreBrightnessDisplayClient: None of the known class names found: %@ (macOS %@)", Self.candidateClassNames.joined(separator: ", "), osVersion))
             return
         }
         clientInstance = cls.init()

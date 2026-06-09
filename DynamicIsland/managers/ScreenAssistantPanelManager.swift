@@ -41,7 +41,7 @@ class ScreenAssistantPanelManager: ObservableObject {
         // The actual panels are managed by ScreenAssistantManager
         // This is just for compatibility with existing code
         
-        print("ScreenAssistant: New dual-panel system activated")
+        Log.debug("ScreenAssistant: New dual-panel system activated")
     }
     
     func hideScreenAssistantPanel() {
@@ -52,7 +52,7 @@ class ScreenAssistantPanelManager: ObservableObject {
         screenAssistantPanel?.close()
         screenAssistantPanel = nil
         
-        print("ScreenAssistant: Panels hidden")
+        Log.debug("ScreenAssistant: Panels hidden")
     }
     
     func toggleScreenAssistantPanel() {

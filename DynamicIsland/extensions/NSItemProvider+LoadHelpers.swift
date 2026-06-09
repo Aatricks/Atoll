@@ -43,7 +43,7 @@ extension NSItemProvider {
         return await withCheckedContinuation { (cont: CheckedContinuation<Data?, Never>) in
             loadItem(forTypeIdentifier: UTType.data.identifier, options: nil) { item, error in
                 if let error {
-                    print("Error loading data for type \(UTType.data.identifier): \(error.localizedDescription)")
+                    Log.error("Error loading data for type \(UTType.data.identifier): \(error.localizedDescription)")
                     cont.resume(returning: nil)
                     return
                 }
@@ -62,7 +62,7 @@ extension NSItemProvider {
                             try fileManager.removeItem(at: folderURL)
                         }
                     } catch {
-                        print("Error: \(error.localizedDescription)")
+                        Log.error("Error: \(error.localizedDescription)")
                     }
                     cont.resume(returning: data)
                 } else if let data = item as? Data {
@@ -100,7 +100,7 @@ extension NSItemProvider {
         await withCheckedContinuation { (cont: CheckedContinuation<URL?, Never>) in
             loadItem(forTypeIdentifier: typeIdentifier, options: nil) { item, error in
                 if let error {
-                    print("❌ Error loading item for type \(typeIdentifier): \(error.localizedDescription)")
+                    Log.error("❌ Error loading item for type \(typeIdentifier): \(error.localizedDescription)")
                     cont.resume(returning: nil)
                     return
                 }

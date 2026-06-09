@@ -107,7 +107,7 @@ final class MediaKeyInterceptor {
 #endif
 
         guard let systemDefinedType = systemDefinedEventType else {
-            NSLog("❌ Unable to resolve system-defined event type")
+            Log.error("❌ Unable to resolve system-defined event type")
             return false
         }
         let mask = CGEventMask(1) << systemDefinedType.rawValue
@@ -135,10 +135,10 @@ final class MediaKeyInterceptor {
         guard let tap = createdTap else {
 #if canImport(ApplicationServices)
             if !AXIsProcessTrusted() {
-                NSLog("⚠️ Accessibility permission missing; grant access in System Settings › Privacy & Security › Accessibility")
+                Log.debug("⚠️ Accessibility permission missing; grant access in System Settings › Privacy & Security › Accessibility")
             }
 #endif
-            NSLog("❌ Failed to create media key event tap")
+            Log.error("❌ Failed to create media key event tap")
             return false
         }
 
@@ -149,7 +149,7 @@ final class MediaKeyInterceptor {
         }
         CGEvent.tapEnable(tap: tap, enable: true)
         isTapEnabled = true
-        NSLog("✅ Media key event tap installed (HID)")
+        Log.debug("✅ Media key event tap installed (HID)")
         return true
     }
 

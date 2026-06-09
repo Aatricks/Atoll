@@ -61,7 +61,7 @@ class LockScreenManager: ObservableObject {
     // MARK: - Initialization
     private init() {
         setupObservers()
-        print("LockScreenManager: 🔒 Initialized")
+        Log.debug("LockScreenManager: 🔒 Initialized")
     }
     
     deinit {
@@ -103,17 +103,17 @@ class LockScreenManager: ObservableObject {
             object: nil
         )
 
-        print("LockScreenManager: ✅ Observers registered for lock/unlock events")
+        Log.debug("LockScreenManager: ✅ Observers registered for lock/unlock events")
     }
     
     // MARK: - Event Handlers
     
     @objc private func screenLocked() {
         guard !isLocked else {
-            print("[\(timestamp())] LockScreenManager: 🔁 Duplicate LOCK event ignored")
+            Log.debug("[\(timestamp())] LockScreenManager: 🔁 Duplicate LOCK event ignored")
             return
         }
-        print("[\(timestamp())] LockScreenManager: 🔒 Screen LOCKED event received")
+        Log.debug("[\(timestamp())] LockScreenManager: 🔒 Screen LOCKED event received")
         Logger.log("LockScreenManager: Screen locked", category: .lifecycle)
         LockSoundPlayer.shared.playLockChime()
         LockScreenDisplayContextProvider.shared.refresh(reason: "screen-locked")
@@ -140,7 +140,7 @@ class LockScreenManager: ObservableObject {
         }
         
         // Show panel FIRST (creates and shows window on lock screen)
-        print("[\(timestamp())] LockScreenManager: 🎵 Showing lock screen panel")
+        Log.debug("[\(timestamp())] LockScreenManager: 🎵 Showing lock screen panel")
         LockScreenPanelManager.shared.showPanel()
         LockScreenLiveActivityWindowManager.shared.showLocked()
         LockScreenWeatherManager.shared.showWeatherWidget()
@@ -149,23 +149,23 @@ class LockScreenManager: ObservableObject {
         
         // THEN trigger lock icon in Atoll (only if enabled in settings)
         if Defaults[.enableLockScreenLiveActivity] {
-            print("[\(timestamp())] LockScreenManager: 🔴 Starting lock icon live activity")
+            Log.debug("[\(timestamp())] LockScreenManager: 🔴 Starting lock icon live activity")
             coordinator.toggleExpandingView(status: true, type: .lockScreen)
         } else {
-            print("[\(timestamp())] LockScreenManager: ⏭️ Lock icon disabled in settings")
+            Log.debug("[\(timestamp())] LockScreenManager: ⏭️ Lock icon disabled in settings")
         }
         
         startLockStatePolling()
 
-        print("[\(timestamp())] LockScreenManager: ✅ Lock screen activated")
+        Log.debug("[\(timestamp())] LockScreenManager: ✅ Lock screen activated")
     }
 
     @objc private func screenUnlocked() {
         guard isLocked else {
-            print("[\(timestamp())] LockScreenManager: 🔁 Unlock event ignored (already unlocked)")
+            Log.debug("[\(timestamp())] LockScreenManager: 🔁 Unlock event ignored (already unlocked)")
             return
         }
-        print("[\(timestamp())] LockScreenManager: 🔓 Screen UNLOCKED event received")
+        Log.debug("[\(timestamp())] LockScreenManager: 🔓 Screen UNLOCKED event received")
         Logger.log("LockScreenManager: Screen unlocked", category: .lifecycle)
         LockSoundPlayer.shared.playUnlockChime()
         LockScreenDisplayContextProvider.shared.refresh(reason: "screen-unlocked")
@@ -202,7 +202,7 @@ class LockScreenManager: ObservableObject {
         }
         
         // Hide panel window immediately and synchronously
-        print("[\(timestamp())] LockScreenManager: 🚪 Hiding panel window")
+        Log.debug("[\(timestamp())] LockScreenManager: 🚪 Hiding panel window")
         LockScreenPanelManager.shared.hidePanel()
         FullScreenArtworkWindowManager.shared.hide()
         LockScreenLiveActivityWindowManager.shared.showUnlockAndScheduleHide()
@@ -221,7 +221,7 @@ class LockScreenManager: ObservableObject {
             }
         }
         
-        print("[\(self.timestamp())] LockScreenManager: ✅ Lock screen deactivated")
+        Log.debug("[\(self.timestamp())] LockScreenManager: ✅ Lock screen deactivated")
     }
     
     // MARK: - Lock State Polling
@@ -249,7 +249,7 @@ class LockScreenManager: ObservableObject {
                 await MainActor.run {
                     guard let self, self.isLocked else { return }
                     if !Self.isSessionScreenLocked() {
-                        print("[\(self.timestamp())] LockScreenManager: 🔓 Polling detected unlock ahead of notification")
+                        Log.debug("[\(self.timestamp())] LockScreenManager: 🔓 Polling detected unlock ahead of notification")
                         self.screenUnlocked()
                     }
                 }

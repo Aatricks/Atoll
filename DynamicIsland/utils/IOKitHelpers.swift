@@ -35,7 +35,7 @@ func di_getIOName(_ entry: io_registry_entry_t) -> String? {
     let result = IORegistryEntryGetName(entry, pointer)
     guard result == kIOReturnSuccess else {
         if let message = String(validatingUTF8: mach_error_string(result)) {
-            print("IORegistryEntryGetName error: \(message)")
+            Log.debug("IORegistryEntryGetName error: \(message)")
         }
         return nil
     }

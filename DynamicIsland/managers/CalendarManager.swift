@@ -166,15 +166,15 @@ class CalendarManager: ObservableObject {
                 await updateLockScreenEvents(force: true)
             }
         case .restricted, .denied:
-            NSLog("Calendar access denied or restricted")
+            Log.error("Calendar access denied or restricted")
         case .authorized, .fullAccess:
             await reloadCalendarAndReminderLists()
             await updateEvents(force: true)
             await updateLockScreenEvents(force: true)
         case .writeOnly:
-            NSLog("Calendar write only")
+            Log.debug("Calendar write only")
         @unknown default:
-            NSLog("Unknown calendar authorization status")
+            Log.debug("Unknown calendar authorization status")
         }
     }
 
@@ -190,13 +190,13 @@ class CalendarManager: ObservableObject {
                 await reloadCalendarAndReminderLists()
             }
         case .restricted, .denied:
-            NSLog("Reminder access denied or restricted")
+            Log.error("Reminder access denied or restricted")
         case .authorized, .fullAccess:
             await reloadCalendarAndReminderLists()
         case .writeOnly:
-            NSLog("Reminder write only")
+            Log.debug("Reminder write only")
         @unknown default:
-            NSLog("Unknown reminder authorization status")
+            Log.debug("Unknown reminder authorization status")
         }
     }
 

@@ -551,7 +551,7 @@ class StatsManager: ObservableObject {
     func startMonitoring() {
         guard !isMonitoring else { return }
         
-        print("StatsManager: Starting monitoring...")
+        Log.debug("StatsManager: Starting monitoring...")
         
         // Reset baseline for accurate measurement
         let initialStats = getNetworkStats()
@@ -573,7 +573,7 @@ class StatsManager: ObservableObject {
             self.updateSystemStats()
         }
         
-        print("StatsManager: Monitoring started")
+        Log.debug("StatsManager: Monitoring started")
     }
     
     func stopMonitoring() {
@@ -586,7 +586,7 @@ class StatsManager: ObservableObject {
         delayedStopTimer?.invalidate()
         
         isMonitoring = false
-        print("StatsManager: Monitoring stopped")
+        Log.debug("StatsManager: Monitoring stopped")
         cachedProcessStats.removeAll()
         lastProcessStatsUpdate = .distantPast
         isProcessRefreshInFlight = false
@@ -1471,7 +1471,7 @@ class StatsManager: ObservableObject {
         do {
             try task.run()
         } catch {
-            NSLog("StatsManager: Failed to run ps command: \(error.localizedDescription)")
+            Log.error("StatsManager: Failed to run ps command: \(error.localizedDescription)")
             return []
         }
 

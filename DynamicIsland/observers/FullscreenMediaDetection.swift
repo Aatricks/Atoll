@@ -88,7 +88,7 @@ class FullscreenMediaDetector: ObservableObject {
 
         if newStatus != fullscreenStatus {
             fullscreenStatus = newStatus
-            NSLog("✅ Fullscreen status: \(newStatus)")
+            Log.debug("✅ Fullscreen status: \(newStatus)")
         }
     }
 

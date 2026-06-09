@@ -79,7 +79,7 @@ class BluetoothAudioManager: ObservableObject {
     
     // MARK: - Initialization
     private init() {
-        print("🎧 [BluetoothAudioManager] Initializing...")
+        Log.debug("🎧 [BluetoothAudioManager] Initializing...")
         setupBluetoothObservers()
         checkInitialDevices()
         startPollingForChanges()
@@ -93,7 +93,7 @@ class BluetoothAudioManager: ObservableObject {
     
     /// Sets up observers for Bluetooth device connection/disconnection events
     private func setupBluetoothObservers() {
-        print("🎧 [BluetoothAudioManager] Setting up Bluetooth observers...")
+        Log.debug("🎧 [BluetoothAudioManager] Setting up Bluetooth observers...")
         
         // Use DistributedNotificationCenter for IOBluetooth notifications
         let dnc = DistributedNotificationCenter.default()
@@ -114,12 +114,12 @@ class BluetoothAudioManager: ObservableObject {
             object: nil
         )
         
-        print("🎧 [BluetoothAudioManager] ✅ Observers registered with DistributedNotificationCenter")
+        Log.debug("🎧 [BluetoothAudioManager] ✅ Observers registered with DistributedNotificationCenter")
     }
     
     /// Starts polling for device connection changes (fallback mechanism)
     private func startPollingForChanges() {
-        print("🎧 [BluetoothAudioManager] Starting polling timer (3s interval)...")
+        Log.debug("🎧 [BluetoothAudioManager] Starting polling timer (3s interval)...")
         
         pollingTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
             self?.checkForDeviceChanges()
@@ -135,7 +135,7 @@ class BluetoothAudioManager: ObservableObject {
         guard IOBluetoothHostController.default()?.powerState == kBluetoothHCIPowerStateON else {
             // Bluetooth is off - clear connected devices if any
             if !connectedDevices.isEmpty {
-                print("🎧 [BluetoothAudioManager] ⚠️ Bluetooth powered off - clearing connected devices")
+                Log.debug("🎧 [BluetoothAudioManager] ⚠️ Bluetooth powered off - clearing connected devices")
                 connectedDevices.removeAll()
                 isBluetoothAudioConnected = false
             }
@@ -157,30 +157,30 @@ class BluetoothAudioManager: ObservableObject {
         // Check for new connections
         let newAddresses = currentlyConnectedAddresses.subtracting(previousAddresses)
         if !newAddresses.isEmpty {
-            print("🎧 [BluetoothAudioManager] 🔍 Polling detected new connection(s)")
+            Log.debug("🎧 [BluetoothAudioManager] 🔍 Polling detected new connection(s)")
             checkForNewlyConnectedDevices()
         }
         
         // Check for disconnections
         let removedAddresses = previousAddresses.subtracting(currentlyConnectedAddresses)
         if !removedAddresses.isEmpty {
-            print("🎧 [BluetoothAudioManager] 🔍 Polling detected disconnection(s)")
+            Log.debug("🎧 [BluetoothAudioManager] 🔍 Polling detected disconnection(s)")
             updateConnectedDevices()
         }
     }
     
     /// Checks for already connected Bluetooth audio devices on init
     private func checkInitialDevices() {
-        print("🎧 [BluetoothAudioManager] Checking for initially connected devices...")
+        Log.debug("🎧 [BluetoothAudioManager] Checking for initially connected devices...")
         
         // Check if Bluetooth is powered on
         guard IOBluetoothHostController.default()?.powerState == kBluetoothHCIPowerStateON else {
-            print("🎧 [BluetoothAudioManager] ⚠️ Bluetooth is powered off - skipping initial check")
+            Log.debug("🎧 [BluetoothAudioManager] ⚠️ Bluetooth is powered off - skipping initial check")
             return
         }
         
         guard let pairedDevices = IOBluetoothDevice.pairedDevices() as? [IOBluetoothDevice] else {
-            print("🎧 [BluetoothAudioManager] No paired devices found")
+            Log.debug("🎧 [BluetoothAudioManager] No paired devices found")
             return
         }
         
@@ -188,7 +188,7 @@ class BluetoothAudioManager: ObservableObject {
             device.isConnected() && isAudioDevice(device)
         }
         
-        print("🎧 [BluetoothAudioManager] Found \(connectedAudioDevices.count) connected audio devices")
+        Log.debug("🎧 [BluetoothAudioManager] Found \(connectedAudioDevices.count) connected audio devices")
         
         connectedDevices = connectedAudioDevices.compactMap { device in
             createBluetoothAudioDevice(from: device)
@@ -201,7 +201,7 @@ class BluetoothAudioManager: ObservableObject {
 
         if let lastDevice = connectedDevices.last {
             lastConnectedDevice = lastDevice
-            print("🎧 [BluetoothAudioManager] ✅ Bluetooth audio connected: \(lastDevice.name)")
+            Log.debug("🎧 [BluetoothAudioManager] ✅ Bluetooth audio connected: \(lastDevice.name)")
         }
     }
     
@@ -209,7 +209,7 @@ class BluetoothAudioManager: ObservableObject {
     
     /// Handles Bluetooth device connection notification from DistributedNotificationCenter
     @objc private func handleDeviceConnectedNotification(_ notification: Notification) {
-        print("🎧 [BluetoothAudioManager] 📡 Device connection notification received")
+        Log.debug("🎧 [BluetoothAudioManager] 📡 Device connection notification received")
         
         // Re-check all devices since distributed notification doesn't contain device object
         checkForNewlyConnectedDevices()
@@ -217,7 +217,7 @@ class BluetoothAudioManager: ObservableObject {
     
     /// Handles Bluetooth device disconnection notification from DistributedNotificationCenter
     @objc private func handleDeviceDisconnectedNotification(_ notification: Notification) {
-        print("🎧 [BluetoothAudioManager] 📡 Device disconnection notification received")
+        Log.debug("🎧 [BluetoothAudioManager] 📡 Device disconnection notification received")
         
         // Re-check all devices to update connection state
         updateConnectedDevices()
@@ -227,7 +227,7 @@ class BluetoothAudioManager: ObservableObject {
     private func checkForNewlyConnectedDevices() {
         // Check if Bluetooth is powered on
         guard IOBluetoothHostController.default()?.powerState == kBluetoothHCIPowerStateON else {
-            print("🎧 [BluetoothAudioManager] ⚠️ Bluetooth is powered off - skipping device check")
+            Log.debug("🎧 [BluetoothAudioManager] ⚠️ Bluetooth is powered off - skipping device check")
             return
         }
         
@@ -245,7 +245,7 @@ class BluetoothAudioManager: ObservableObject {
             
             // Check if this device wasn't in our list before
             if !connectedDevices.contains(where: { $0.address == address }) {
-                print("🎧 [BluetoothAudioManager] 🎉 New audio device connected: \(device.name ?? "Unknown")")
+                Log.debug("🎧 [BluetoothAudioManager] 🎉 New audio device connected: \(device.name ?? "Unknown")")
                 
                 guard let audioDevice = createBluetoothAudioDevice(from: device) else {
                     continue
@@ -287,7 +287,7 @@ class BluetoothAudioManager: ObservableObject {
         }
         
         if !removedDevices.isEmpty {
-            print("🎧 [BluetoothAudioManager] 👋 Audio device(s) disconnected")
+            Log.debug("🎧 [BluetoothAudioManager] 👋 Audio device(s) disconnected")
             removedDevices.forEach { cancelHUDBatteryWait(for: $0) }
         }
         
@@ -299,17 +299,17 @@ class BluetoothAudioManager: ObservableObject {
     /// Handles Bluetooth device connection event (legacy - kept for compatibility)
     private func handleDeviceConnected(_ notification: Notification) {
         guard let device = notification.object as? IOBluetoothDevice else {
-            print("🎧 [BluetoothAudioManager] ⚠️ Could not extract device from notification")
+            Log.debug("🎧 [BluetoothAudioManager] ⚠️ Could not extract device from notification")
             return
         }
         
         // Only handle audio devices
         guard isAudioDevice(device) else {
-            print("🎧 [BluetoothAudioManager] Device is not an audio device, ignoring")
+            Log.debug("🎧 [BluetoothAudioManager] Device is not an audio device, ignoring")
             return
         }
         
-        print("🎧 [BluetoothAudioManager] 🎉 Audio device connected: \(device.name ?? "Unknown")")
+        Log.debug("🎧 [BluetoothAudioManager] 🎉 Audio device connected: \(device.name ?? "Unknown")")
         
         guard let audioDevice = createBluetoothAudioDevice(from: device) else {
             return
@@ -338,7 +338,7 @@ class BluetoothAudioManager: ObservableObject {
             return
         }
         
-        print("🎧 [BluetoothAudioManager] 👋 Audio device disconnected: \(device.name ?? "Unknown")")
+        Log.debug("🎧 [BluetoothAudioManager] 👋 Audio device disconnected: \(device.name ?? "Unknown")")
         
         // Remove from connected devices
         let address = device.addressString ?? "Unknown"
@@ -739,7 +739,7 @@ class BluetoothAudioManager: ObservableObject {
         }
 
         isPmsetRefreshInFlight = true
-        print("🎧 [BluetoothAudioManager] 🔄 Triggering pmset fallback (\(reason))")
+        Log.debug("🎧 [BluetoothAudioManager] 🔄 Triggering pmset fallback (\(reason))")
         pmsetFetchQueue.async { [weak self] in
             guard let self else { return }
             let entries = self.collectPmsetAccessoryBatteryEntries()
@@ -972,7 +972,7 @@ class BluetoothAudioManager: ObservableObject {
 
         if logNewEntries {
             for entry in newlyFilled {
-                print("🎧 [BluetoothAudioManager] ℹ️ pmset reported \(entry.level)% for \(entry.displayName)")
+                Log.debug("🎧 [BluetoothAudioManager] ℹ️ pmset reported \(entry.level)% for \(entry.displayName)")
             }
         }
 
@@ -1545,7 +1545,7 @@ class BluetoothAudioManager: ObservableObject {
         let displayName = trimmedName.isEmpty ? "unknown device" : trimmedName
         let isUnknownAddress = trimmedAddress.caseInsensitiveCompare("unknown") == .orderedSame
         let displayAddress = (trimmedAddress.isEmpty || isUnknownAddress) ? "N/A" : trimmedAddress
-        print("🎧 [BluetoothAudioManager] ⚠️ Battery percentage unavailable for \(displayName) (\(displayAddress))")
+        Log.debug("🎧 [BluetoothAudioManager] ⚠️ Battery percentage unavailable for \(displayName) (\(displayAddress))")
     }
 
     private func clearMissingBatteryInfo(forName name: String, address: String) {
@@ -1670,7 +1670,7 @@ class BluetoothAudioManager: ObservableObject {
     private func presentDeviceConnectedHUD(device: BluetoothAudioDevice, batteryLevel: Int?) {
         guard Defaults[.showBluetoothDeviceConnections] else { return }
 
-        print("🎧 [BluetoothAudioManager] 📱 Showing device connected HUD")
+        Log.debug("🎧 [BluetoothAudioManager] 📱 Showing device connected HUD")
 
         let batteryValue: CGFloat = if let batteryLevel {
             CGFloat(clampBatteryPercentage(batteryLevel)) / 100.0
@@ -1694,7 +1694,7 @@ class BluetoothAudioManager: ObservableObject {
     // MARK: - Cleanup
     
     private func cleanup() {
-        print("🎧 [BluetoothAudioManager] Cleaning up observers...")
+        Log.debug("🎧 [BluetoothAudioManager] Cleaning up observers...")
         
         pollingTimer?.invalidate()
         pollingTimer = nil
@@ -1833,7 +1833,7 @@ private final class BluetoothLEBatteryReader: NSObject, CBCentralManagerDelegate
         guard state == .requesting else { return }
 
         if let error {
-            print("🎧 [BluetoothLEBatteryReader] Service discovery failed: \(error.localizedDescription)")
+            Log.error("🎧 [BluetoothLEBatteryReader] Service discovery failed: \(error.localizedDescription)")
             markPeripheralFinished(peripheral.identifier)
             return
         }
@@ -1850,7 +1850,7 @@ private final class BluetoothLEBatteryReader: NSObject, CBCentralManagerDelegate
         guard state == .requesting else { return }
 
         if let error {
-            print("🎧 [BluetoothLEBatteryReader] Characteristic discovery failed: \(error.localizedDescription)")
+            Log.error("🎧 [BluetoothLEBatteryReader] Characteristic discovery failed: \(error.localizedDescription)")
             markPeripheralFinished(peripheral.identifier)
             return
         }
@@ -1869,7 +1869,7 @@ private final class BluetoothLEBatteryReader: NSObject, CBCentralManagerDelegate
         defer { markPeripheralFinished(peripheral.identifier) }
 
         if let error {
-            print("🎧 [BluetoothLEBatteryReader] Battery read failed: \(error.localizedDescription)")
+            Log.error("🎧 [BluetoothLEBatteryReader] Battery read failed: \(error.localizedDescription)")
             return
         }
 

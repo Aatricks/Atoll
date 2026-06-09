@@ -58,13 +58,13 @@ class ColorPickerPanelManager: ObservableObject {
             newPanel.makeKey()
         }
         
-        print("ColorPicker: Panel shown and positioned")
+        Log.debug("ColorPicker: Panel shown and positioned")
     }
     
     func hideColorPickerPanel() {
         panel?.close()
         panel = nil
-        print("ColorPicker: Panel hidden")
+        Log.debug("ColorPicker: Panel hidden")
     }
     
     func toggleColorPickerPanel() {
@@ -703,7 +703,7 @@ struct NativeStyleCloseButton: View {
 
 #Preview {
     ColorPickerPanelView {
-        print("Close panel")
+        Log.debug("Close panel")
     }
     .frame(width: 450, height: 600)
     .onAppear {
