@@ -317,6 +317,53 @@ func getScreenFrame(_ screen: String? = nil) -> CGRect? {
     return nil
 }
 
+/// Converts the physical notch height of a notched MacBook panel into points
+/// for the current display mode.
+///
+/// On notched MacBooks the panel area below the notch is an exact 16:10 region
+/// of the native panel (MBA 13/15: 64 px notch, MBP 14/16: 74 px). macOS
+/// reports `safeAreaInsets.top`/`auxiliaryTop*Area` heights anchored to the
+/// exact-2x mode, so on non-integer scaled resolutions (e.g. "looks like
+/// 1470×956" on a 2560×1664 panel) the reported inset (32 pt) is smaller than
+/// the physical notch (36.75 pt) and the bottom of the notch pokes out below
+/// anything sized from it. Deriving the height from the native panel geometry
+/// closes that gap; on exact-2x modes the result equals the reported inset.
+///
+/// Returns `nil` when the panel is not a notched 16:10-below-notch panel.
+func physicalNotchHeightPoints(nativePanelPixelSize: CGSize, pointWidth: CGFloat) -> CGFloat? {
+    guard nativePanelPixelSize.width > 0, nativePanelPixelSize.height > 0, pointWidth > 0 else {
+        return nil
+    }
+    let belowNotchPixelHeight = nativePanelPixelSize.width * 10 / 16
+    let notchPixelHeight = nativePanelPixelSize.height - belowNotchPixelHeight
+    // Plausibility: real notches are ~3-4% of panel height. Anything outside
+    // that means the panel doesn't follow the 16:10-below-notch layout.
+    guard notchPixelHeight > 0, notchPixelHeight <= nativePanelPixelSize.height * 0.06 else {
+        return nil
+    }
+    return ceil(notchPixelHeight * pointWidth / nativePanelPixelSize.width)
+}
+
+/// Physical notch height in points for a notched screen, derived from the
+/// native panel resolution. Falls back to `nil` for notchless screens or when
+/// the native mode can't be determined.
+func physicalNotchHeight(for screen: NSScreen) -> CGFloat? {
+    guard screen.safeAreaInsets.top > 0 else { return nil }
+    guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
+        return nil
+    }
+    let displayID = CGDirectDisplayID(number.uint32Value)
+    guard let modes = CGDisplayCopyAllDisplayModes(displayID, nil) as? [CGDisplayMode],
+          let nativeMode = modes.max(by: { $0.pixelWidth * $0.pixelHeight < $1.pixelWidth * $1.pixelHeight })
+    else {
+        return nil
+    }
+    return physicalNotchHeightPoints(
+        nativePanelPixelSize: CGSize(width: nativeMode.pixelWidth, height: nativeMode.pixelHeight),
+        pointWidth: screen.frame.width
+    )
+}
+
 func getClosedNotchSize(screen: String? = nil) -> CGSize {
     // Default notch size, to avoid using optionals
     var notchHeight: CGFloat = Defaults[.nonNotchHeight]
@@ -342,7 +389,9 @@ func getClosedNotchSize(screen: String? = nil) -> CGSize {
             // This is a display WITH a notch - use notch height settings
             notchHeight = Defaults[.notchHeight]
             if Defaults[.notchHeightMode] == .matchRealNotchSize {
-                notchHeight = screen.safeAreaInsets.top
+                // safeAreaInsets.top underreports the notch on non-integer
+                // scaled modes; prefer the panel-derived physical height.
+                notchHeight = max(screen.safeAreaInsets.top, physicalNotchHeight(for: screen) ?? 0)
             } else if Defaults[.notchHeightMode] == .matchMenuBar {
                 notchHeight = screen.frame.maxY - screen.visibleFrame.maxY
             }

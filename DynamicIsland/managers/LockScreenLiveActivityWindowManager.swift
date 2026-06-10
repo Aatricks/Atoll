@@ -120,6 +120,13 @@ class LockScreenLiveActivityWindowManager {
             notchSize = getClosedNotchSize(screen: screen.localizedName)
         }
 
+        // The overlay masquerades as the notch on the lock screen, where no
+        // menu bar masks a height shortfall — never let it be shorter than the
+        // physical notch of the screen it is shown on.
+        if let physicalHeight = physicalNotchHeight(for: screen) {
+            notchSize.height = max(notchSize.height, physicalHeight)
+        }
+
         return (notchSize, screen)
     }
 
