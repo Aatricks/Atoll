@@ -35,23 +35,44 @@ final class SpotifyPlaybackLauncher {
     private let desktop: SpotifyDesktopControlling
     private let api: SpotifyAPI
     private let inAppDeviceID: @MainActor () -> String?
+    private let onStaleInAppDevice: @MainActor () -> Void
 
     init(desktop: SpotifyDesktopControlling,
          api: SpotifyAPI,
          inAppDeviceID: @escaping @MainActor () -> String? = {
             guard Defaults[.spotifyStandalonePlayback], SpotifyPlayerManager.shared.isReady else { return nil }
             return SpotifyPlayerManager.shared.deviceID
-         }) {
+         },
+         onStaleInAppDevice: @escaping @MainActor () -> Void = { SpotifyPlayerManager.shared.restart() }) {
         self.desktop = desktop
         self.api = api
         self.inAppDeviceID = inAppDeviceID
+        self.onStaleInAppDevice = onStaleInAppDevice
+    }
+
+    /// Try `attempt` on the in-app device if one is connected. Spotify answers 404 when the
+    /// device_id it's given no longer exists (the hidden web view's SDK session dropped and
+    /// re-registering hasn't happened yet) — report it stale so the player reconnects, and
+    /// tell the caller to fall back to another device. Other errors propagate.
+    /// Returns true when playback was handled in-app.
+    private func startedOnInAppDevice(_ attempt: (String) async throws -> Void) async throws -> Bool {
+        guard let deviceID = inAppDeviceID() else { return false }
+        do {
+            try await attempt(deviceID)
+            return true
+        } catch SpotifyAPIError.http(404) {
+            onStaleInAppDevice()
+            return false
+        }
     }
 
     func playContext(uri: String, shuffle: Bool) async throws {
-        if let deviceID = inAppDeviceID() {
+        let handled = try await startedOnInAppDevice { deviceID in
             try await api.setShuffle(shuffle, deviceID: deviceID)
             try await api.startPlayback(contextURI: uri, uris: nil, offsetURI: nil, deviceID: deviceID)
-        } else if desktop.isRunning() {
+        }
+        if handled { return }
+        if desktop.isRunning() {
             await desktop.setShuffle(shuffle)
             await desktop.playContext(uri: uri, shuffle: shuffle)
         } else {
@@ -62,12 +83,14 @@ final class SpotifyPlaybackLauncher {
     }
 
     func playTrack(uri: String, inContext contextURI: String?, shuffle: Bool) async throws {
-        if let deviceID = inAppDeviceID() {
+        let handled = try await startedOnInAppDevice { deviceID in
             // Start audio first (one round-trip) so a song tap feels immediate; the
             // shuffle state for the continuing queue is set right after, best-effort.
             try await api.startPlayback(contextURI: contextURI, uris: contextURI == nil ? [uri] : nil, offsetURI: contextURI == nil ? nil : uri, deviceID: deviceID)
             try? await api.setShuffle(shuffle, deviceID: deviceID)
-        } else if desktop.isRunning() {
+        }
+        if handled { return }
+        if desktop.isRunning() {
             await desktop.setShuffle(shuffle)
             await desktop.playTrack(uri: uri, inContext: contextURI)
         } else {
@@ -78,8 +101,14 @@ final class SpotifyPlaybackLauncher {
     }
 
     func playLikedSongs(shuffle: Bool) async throws {
-        let deviceID: String
-        if let d = inAppDeviceID() { deviceID = d } else { deviceID = try await activeDeviceID() }
+        let handled = try await startedOnInAppDevice { deviceID in
+            try await startLikedSongs(shuffle: shuffle, deviceID: deviceID)
+        }
+        if handled { return }
+        try await startLikedSongs(shuffle: shuffle, deviceID: try await activeDeviceID())
+    }
+
+    private func startLikedSongs(shuffle: Bool, deviceID: String) async throws {
         try await api.setShuffle(shuffle, deviceID: deviceID)
         // Starting the Liked Songs collection with shuffle on otherwise begins from a fixed
         // point, so every launch yields the same order. Seeding playback at a random saved
@@ -102,9 +131,11 @@ final class SpotifyPlaybackLauncher {
     /// Atoll's in-app device (moves the existing session onto it, preserving queue +
     /// position), then the desktop app, then resuming on the active Connect device.
     func resumeLastPlayback() async throws {
-        if let deviceID = inAppDeviceID() {
+        let handled = try await startedOnInAppDevice { deviceID in
             try await api.transferPlayback(deviceIDs: [deviceID], play: true)
-        } else if desktop.isRunning() {
+        }
+        if handled { return }
+        if desktop.isRunning() {
             await desktop.play()
         } else {
             let deviceID = try await activeDeviceID()

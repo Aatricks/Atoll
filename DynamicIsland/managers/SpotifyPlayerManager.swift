@@ -46,6 +46,18 @@ final class SpotifyPlayerManager: ObservableObject {
     private(set) var currentDuration: Double = 0
     private(set) var currentPosition: Double = 0
     private(set) var lastStateDate: Date = Date()
+
+    /// Web API used to pull the user's Spotify session onto this device when the SDK
+    /// player has no queue loaded (a fresh/reconnected session starts empty, and raw
+    /// transport JS then fails with "Cannot perform operation; no list was loaded").
+    private let api: SpotifyAPI
+    /// In-flight session recovery; exposed so tests can await its completion.
+    private(set) var recoveryTask: Task<Void, Never>?
+    private var lastRecoveryAttempt: Date?
+
+    init(api: SpotifyAPI = SpotifyWebAPIClient()) {
+        self.api = api
+    }
     /// Build the hidden web view and connect the SDK once. No-op if a player already
     /// exists (prevents duplicate "Atoll" devices) or if not authenticated.
     func start() {
@@ -89,7 +101,18 @@ final class SpotifyPlayerManager: ObservableObject {
         webView = nil
         isReady = false
         deviceID = nil
+        // A recovery aimed at the now-dead device would just 404 and flash an error.
+        recoveryTask?.cancel()
+        recoveryTask = nil
+        // Clear all track state: a reconnected SDK session starts with an empty queue,
+        // and leftovers would make transport skip the empty-queue recovery path.
+        currentTrack = nil
+        currentArtist = nil
         currentTrackURI = nil
+        artworkURL = nil
+        isPaused = true
+        currentDuration = 0
+        currentPosition = 0
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         MPNowPlayingInfoCenter.default().playbackState = .stopped
     }
@@ -102,12 +125,58 @@ final class SpotifyPlayerManager: ObservableObject {
     }
 
     // MARK: - Optional transport (the tab can drive the in-app player directly)
-    func togglePlay() { webView?.evaluateJavaScript("window.__atollPlayer && window.__atollPlayer.togglePlay();", completionHandler: nil) }
-    func nextTrack() { webView?.evaluateJavaScript("window.__atollPlayer && window.__atollPlayer.nextTrack();", completionHandler: nil) }
-    func previousTrack() { webView?.evaluateJavaScript("window.__atollPlayer && window.__atollPlayer.previousTrack();", completionHandler: nil) }
-    func resume() { webView?.evaluateJavaScript("window.__atollPlayer && window.__atollPlayer.resume();", completionHandler: nil) }
+    func togglePlay() {
+        guard !recoverIfQueueEmpty() else { return }
+        webView?.evaluateJavaScript("window.__atollPlayer && window.__atollPlayer.togglePlay();", completionHandler: nil)
+    }
+    func nextTrack() {
+        guard !recoverIfQueueEmpty() else { return }
+        webView?.evaluateJavaScript("window.__atollPlayer && window.__atollPlayer.nextTrack();", completionHandler: nil)
+    }
+    func previousTrack() {
+        guard !recoverIfQueueEmpty() else { return }
+        webView?.evaluateJavaScript("window.__atollPlayer && window.__atollPlayer.previousTrack();", completionHandler: nil)
+    }
+    func resume() {
+        guard !recoverIfQueueEmpty() else { return }
+        webView?.evaluateJavaScript("window.__atollPlayer && window.__atollPlayer.resume();", completionHandler: nil)
+    }
     func pause() { webView?.evaluateJavaScript("window.__atollPlayer && window.__atollPlayer.pause();", completionHandler: nil) }
     func seek(toMilliseconds ms: Double) { webView?.evaluateJavaScript("window.__atollPlayer && window.__atollPlayer.seek(\(Int(ms)));", completionHandler: nil) }
+
+    // MARK: - Empty-queue recovery
+    //
+    // The Web Playback SDK rejects every transport command until a queue has been loaded
+    // onto its device ("Cannot perform operation; no list was loaded"), and a session that
+    // just (re)connected has none. Instead of letting those commands die, move the user's
+    // current Spotify session — queue and position intact — onto this device.
+
+    /// If transport can't work yet (connected device, nothing loaded), kick off recovery
+    /// and report true so the caller skips the doomed JS call.
+    private func recoverIfQueueEmpty() -> Bool {
+        guard deviceID != nil, (currentTrack ?? "").isEmpty else { return false }
+        recoverSession()
+        return true
+    }
+
+    /// Transfer the active Spotify session onto this device and start playing. Coalesces
+    /// rapid repeat calls (one in-flight attempt, then a short cool-down) so a tapping
+    /// user or a retrying caller can't queue up a burst of transfers.
+    private func recoverSession() {
+        guard let deviceID, recoveryTask == nil else { return }
+        if let last = lastRecoveryAttempt, Date().timeIntervalSince(last) < 3 { return }
+        lastRecoveryAttempt = Date()
+        Log.debug("[SpotifyPlayer] empty queue — transferring session to device \(deviceID)")
+        recoveryTask = Task { [weak self, api] in
+            do {
+                try await api.transferPlayback(deviceIDs: [deviceID], play: true)
+            } catch {
+                Log.error("[SpotifyPlayer] session recovery failed: \(error)")
+                self?.statusMessage = String(localized: "Couldn't start playback — play something in Spotify once, then try again.")
+            }
+            self?.recoveryTask = nil
+        }
+    }
 
     // MARK: - System now-playing (Control Center / media keys / notch)
     private func configureRemoteCommands() {
@@ -153,7 +222,9 @@ final class SpotifyPlayerManager: ObservableObject {
     }
 
     // MARK: - JS -> Swift bridge
-    fileprivate func handle(_ body: [String: Any]) {
+    /// Internal (not fileprivate) so tests can feed SDK events through the same path
+    /// the web view uses.
+    func handle(_ body: [String: Any]) {
         switch body["type"] as? String ?? "" {
         case "token_request":
             Task { [weak self] in
@@ -183,6 +254,12 @@ final class SpotifyPlayerManager: ObservableObject {
             let kind = body["kind"] as? String ?? "?"
             let message = body["message"] as? String ?? ""
             Log.error("[SpotifyPlayer] error \(kind): \(message)")
+            if kind == "playback", message.localizedCaseInsensitiveContains("no list was loaded"), deviceID != nil {
+                // Recoverable: the device just has no queue yet. Load one instead of
+                // surfacing an error the user can't act on.
+                recoverSession()
+                return
+            }
             statusMessage = kind == "account"
                 ? String(localized: "In-app playback needs Spotify Premium.")
                 : "Player error (\(kind)): \(message)"

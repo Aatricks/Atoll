@@ -42,6 +42,16 @@ private final class MockAPI: SpotifyAPI {
     /// so the random-offset seeding path in `playLikedSongs` has something to pick.
     var savedTotal: Int?
     var savedURI = "spotify:track:LIKED"
+    /// Simulates a device Spotify no longer knows about: any playback call targeting it
+    /// fails with HTTP 404, the way the real Web API rejects a stale device_id.
+    var notFoundDevice: String?
+    /// When set, every playback call targeting a device throws this error.
+    var playbackError: Error?
+
+    private func checkPlayback(device: String?) throws {
+        if let e = playbackError { throw e }
+        if let stale = notFoundDevice, device == stale { throw SpotifyAPIError.http(404) }
+    }
     func currentUserPlaylists(limit: Int, offset: Int) async throws -> SpotifyPaging<SpotifyPlaylist> { .init(items: [], next: nil, total: 0) }
     func playlistTracks(playlistID: String, limit: Int, offset: Int) async throws -> SpotifyPaging<SpotifyTrack> { .init(items: [], next: nil, total: 0) }
     func savedTracks(limit: Int, offset: Int) async throws -> SpotifyPaging<SpotifyTrack> {
@@ -52,9 +62,19 @@ private final class MockAPI: SpotifyAPI {
     func recentlyPlayed(limit: Int) async throws -> [SpotifyPlayHistoryItem] { [] }
     func search(query: String, types: [SpotifySearchType], limit: Int) async throws -> SpotifySearchResponse { .init(playlists: nil, albums: nil, tracks: nil) }
     func availableDevices() async throws -> [SpotifyDevice] { devices }
-    func startPlayback(contextURI: String?, uris: [String]?, offsetURI: String?, deviceID: String?) async throws { started = (contextURI, uris, offsetURI, deviceID) }
-    func setShuffle(_ on: Bool, deviceID: String?) async throws { shuffleSet = on }
-    func transferPlayback(deviceIDs: [String], play: Bool) async throws { transferred = (deviceIDs, play) }
+    func startPlayback(contextURI: String?, uris: [String]?, offsetURI: String?, deviceID: String?) async throws {
+        try checkPlayback(device: deviceID)
+        started = (contextURI, uris, offsetURI, deviceID)
+    }
+    func setShuffle(_ on: Bool, deviceID: String?) async throws {
+        try checkPlayback(device: deviceID)
+        shuffleSet = on
+    }
+    func transferPlayback(deviceIDs: [String], play: Bool) async throws {
+        if let e = playbackError { throw e }
+        if let stale = notFoundDevice, deviceIDs.contains(stale) { throw SpotifyAPIError.http(404) }
+        transferred = (deviceIDs, play)
+    }
 }
 
 @MainActor
@@ -178,6 +198,81 @@ final class SpotifyPlaybackLauncherTests: XCTestCase {
         try await launcher.resumeLastPlayback()
         XCTAssertTrue(desktop.resumed)
         XCTAssertNil(api.transferred)
+    }
+
+    // MARK: - Stale in-app device (Spotify answers 404 for a device it no longer knows)
+
+    func test_playContext_staleInAppDevice_fallsBackToDesktop_andSignalsStale() async throws {
+        let desktop = MockDesktop(); desktop.running = true
+        let api = MockAPI(); api.notFoundDevice = "atoll-dev"
+        var staleSignalled = false
+        let launcher = SpotifyPlaybackLauncher(desktop: desktop, api: api,
+                                               inAppDeviceID: { "atoll-dev" },
+                                               onStaleInAppDevice: { staleSignalled = true })
+        try await launcher.playContext(uri: "spotify:playlist:p1", shuffle: true)
+        XCTAssertEqual(desktop.playedContext?.uri, "spotify:playlist:p1")
+        XCTAssertTrue(staleSignalled, "a 404 on the in-app device should be reported so the player can re-register")
+    }
+
+    func test_playContext_staleInAppDevice_noDesktop_fallsBackToActiveDevice() async throws {
+        let desktop = MockDesktop(); desktop.running = false
+        let api = MockAPI(); api.notFoundDevice = "atoll-dev"
+        api.devices = [SpotifyDevice(id: "d1", name: "Phone", is_active: true)]
+        let launcher = SpotifyPlaybackLauncher(desktop: desktop, api: api,
+                                               inAppDeviceID: { "atoll-dev" },
+                                               onStaleInAppDevice: {})
+        try await launcher.playContext(uri: "spotify:playlist:p1", shuffle: false)
+        XCTAssertEqual(api.started?.context, "spotify:playlist:p1")
+        XCTAssertEqual(api.started?.device, "d1")
+    }
+
+    func test_playTrack_staleInAppDevice_fallsBackToDesktop() async throws {
+        let desktop = MockDesktop(); desktop.running = true
+        let api = MockAPI(); api.notFoundDevice = "atoll-dev"
+        let launcher = SpotifyPlaybackLauncher(desktop: desktop, api: api,
+                                               inAppDeviceID: { "atoll-dev" },
+                                               onStaleInAppDevice: {})
+        try await launcher.playTrack(uri: "spotify:track:t1", inContext: "spotify:playlist:p1", shuffle: false)
+        XCTAssertEqual(desktop.playedTrack?.uri, "spotify:track:t1")
+        XCTAssertEqual(desktop.playedTrack?.context, "spotify:playlist:p1")
+    }
+
+    func test_playLikedSongs_staleInAppDevice_fallsBackToActiveDevice() async throws {
+        let desktop = MockDesktop(); desktop.running = false
+        let api = MockAPI(); api.notFoundDevice = "atoll-dev"
+        api.devices = [SpotifyDevice(id: "d1", name: "PC", is_active: true)]
+        let launcher = SpotifyPlaybackLauncher(desktop: desktop, api: api,
+                                               inAppDeviceID: { "atoll-dev" },
+                                               onStaleInAppDevice: {})
+        try await launcher.playLikedSongs(shuffle: false)
+        XCTAssertEqual(api.started?.context, "spotify:collection:tracks")
+        XCTAssertEqual(api.started?.device, "d1")
+    }
+
+    func test_resume_staleInAppDevice_fallsBackToDesktop() async throws {
+        let desktop = MockDesktop(); desktop.running = true
+        let api = MockAPI(); api.notFoundDevice = "atoll-dev"
+        var staleSignalled = false
+        let launcher = SpotifyPlaybackLauncher(desktop: desktop, api: api,
+                                               inAppDeviceID: { "atoll-dev" },
+                                               onStaleInAppDevice: { staleSignalled = true })
+        try await launcher.resumeLastPlayback()
+        XCTAssertTrue(desktop.resumed, "transfer to a dead device should fall back to resuming the desktop app")
+        XCTAssertTrue(staleSignalled)
+    }
+
+    func test_playContext_inAppNon404Error_propagates_withoutFallback() async {
+        let desktop = MockDesktop(); desktop.running = true
+        let api = MockAPI(); api.playbackError = SpotifyAPIError.http(500)
+        var staleSignalled = false
+        let launcher = SpotifyPlaybackLauncher(desktop: desktop, api: api,
+                                               inAppDeviceID: { "atoll-dev" },
+                                               onStaleInAppDevice: { staleSignalled = true })
+        do { try await launcher.playContext(uri: "spotify:playlist:p1", shuffle: false); XCTFail("expected throw") }
+        catch let e as SpotifyAPIError { XCTAssertEqual(e, .http(500)) }
+        catch { XCTFail("wrong error: \(error)") }
+        XCTAssertNil(desktop.playedContext, "a non-404 failure is not a stale device; no fallback")
+        XCTAssertFalse(staleSignalled)
     }
 
     func test_resume_noInApp_noDesktop_resumesActiveDevice() async throws {
