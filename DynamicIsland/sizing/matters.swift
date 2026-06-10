@@ -389,9 +389,13 @@ func getClosedNotchSize(screen: String? = nil) -> CGSize {
             // This is a display WITH a notch - use notch height settings
             notchHeight = Defaults[.notchHeight]
             if Defaults[.notchHeightMode] == .matchRealNotchSize {
-                // safeAreaInsets.top underreports the notch on non-integer
-                // scaled modes; prefer the panel-derived physical height.
-                notchHeight = max(screen.safeAreaInsets.top, physicalNotchHeight(for: screen) ?? 0)
+                // Match the system-reported inset, NOT the panel-derived
+                // physical height: the menu bar and WindowServer's notch
+                // shield are drawn against this value, so anything taller
+                // visibly pokes below the menu bar on the desktop. The
+                // physical height is only used on the lock screen overlay,
+                // where no menu bar exists (see LockScreenLiveActivityWindowManager).
+                notchHeight = screen.safeAreaInsets.top
             } else if Defaults[.notchHeightMode] == .matchMenuBar {
                 notchHeight = screen.frame.maxY - screen.visibleFrame.maxY
             }
