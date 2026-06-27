@@ -34,7 +34,7 @@ struct MusicControlWindowMetrics: Equatable {
 final class MusicControlWindowManager {
     static let shared = MusicControlWindowManager()
 
-    private var window: NSWindow?
+    private var window: NSPanel?
     private var hostingView: NSHostingView<MusicControlOverlay>?
     private var hasDelegated = false
     private var lastMetrics: MusicControlWindowMetrics?
@@ -142,7 +142,7 @@ final class MusicControlWindowManager {
         }
     }
 
-    private func tearDownWindowResources(using window: NSWindow? = nil) {
+    private func tearDownWindowResources(using window: NSPanel? = nil) {
         let targetWindow = window ?? self.window
         targetWindow?.contentView = nil
         targetWindow?.orderOut(nil)
@@ -162,12 +162,12 @@ final class MusicControlWindowManager {
         return view
     }
 
-    private func ensureWindow(on screen: NSScreen) -> NSWindow {
+    private func ensureWindow(on screen: NSScreen) -> NSPanel {
         if let window {
             return window
         }
 
-        let window = NSWindow(
+        let window = NSPanel(
             contentRect: NSRect(x: screen.frame.midX, y: screen.frame.midY, width: 240, height: 68),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
@@ -192,7 +192,6 @@ final class MusicControlWindowManager {
     }
 
     private func measuredSize(for hosting: NSHostingView<MusicControlOverlay>) -> CGSize {
-        hosting.layoutSubtreeIfNeeded()
         let size = hosting.fittingSize
         return CGSize(width: ceil(size.width), height: ceil(size.height))
     }

@@ -36,6 +36,11 @@ class DynamicIslandViewModel: NSObject, ObservableObject {
     @Published var dropEvent: Bool = false
     @Published var anyDropZoneTargeting: Bool = false
     var cancellables: Set<AnyCancellable> = []
+
+    /// Teardown hook ContentView registers in `onAppear`; the window-cleanup path
+    /// invokes it before closing the panel since `.onDisappear` is unreliable for
+    /// borderless panels, preventing leaked hover-polling Tasks from accumulating.
+    var onViewTeardown: (() -> Void)?
     
     @Published var hideOnClosed: Bool = true
     @Published var isHoveringCalendar: Bool = false
@@ -115,6 +120,8 @@ class DynamicIslandViewModel: NSObject, ObservableObject {
     }
 
     func destroy() {
+        onViewTeardown?()
+        onViewTeardown = nil
         cancellables.forEach { $0.cancel() }
         cancellables.removeAll()
     }
@@ -352,7 +359,7 @@ class DynamicIslandViewModel: NSObject, ObservableObject {
     }
     
     private func calculateDynamicNotchSize() -> CGSize {
-        let baseSize = Defaults[.enableMinimalisticUI] ? minimalisticOpenNotchSize : openNotchSize
+        let baseSize = Defaults[.enableMinimalisticUI] ? minimalisticOpenNotchSize(isDynamicIslandMode: shouldUseDynamicIslandMode(for: screen)) : openNotchSize
         var adjustedSize = baseSize
 
         if coordinator.currentView == .notes || coordinator.currentView == .clipboard {

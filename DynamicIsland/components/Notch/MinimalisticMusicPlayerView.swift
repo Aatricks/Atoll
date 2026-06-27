@@ -65,7 +65,8 @@ struct MinimalisticMusicPlayerView: View {
 
                 reminderList
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, shouldUseDynamicIslandMode(for: vm.screen) ? -4 : 12)
+            .padding(.vertical, shouldUseDynamicIslandMode(for: vm.screen) ? 14 : 0)
             .frame(maxWidth: .infinity)
             .frame(height: calculateDynamicHeight())
             .animation(.smooth(duration: 0.3), value: dynamicHeightSignature)
@@ -133,9 +134,9 @@ struct MinimalisticMusicPlayerView: View {
 
                 reminderList
             }
-            .padding(.horizontal, 12)
-            .padding(.top, 6)
-            .padding(.bottom, ReminderLiveActivityManager.baselineMinimalisticBottomPadding)
+            .padding(.horizontal, shouldUseDynamicIslandMode(for: vm.screen) ? -4 : 12)
+            .padding(.top, shouldUseDynamicIslandMode(for: vm.screen) ? 14 : 6)
+            .padding(.bottom, shouldUseDynamicIslandMode(for: vm.screen) ? 14 : ReminderLiveActivityManager.baselineMinimalisticBottomPadding)
             .frame(maxWidth: .infinity)
             .frame(height: calculateDynamicHeight(), alignment: .top)
             .animation(.smooth(duration: 0.3), value: dynamicHeightSignature)
@@ -274,8 +275,9 @@ struct MinimalisticMusicPlayerView: View {
         }
 
         // Add padding
-        height += 15 // top padding
-        height += ReminderLiveActivityManager.baselineMinimalisticBottomPadding
+        let isDynamicIsland = shouldUseDynamicIslandMode(for: vm.screen)
+        height += isDynamicIsland ? 14 : 15 // top padding
+        height += isDynamicIsland ? 14 : ReminderLiveActivityManager.baselineMinimalisticBottomPadding
 
         return height
     }
@@ -666,7 +668,6 @@ private struct MinimalisticReminderDetailsView: View {
     private var progressBar: some View {
         TimelineView(
             .animation(
-                minimumInterval: 1.0,
                 paused: isProgressTimelinePaused
             )
         ) { timeline in

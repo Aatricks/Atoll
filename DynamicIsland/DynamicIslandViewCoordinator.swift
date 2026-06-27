@@ -363,16 +363,21 @@ class DynamicIslandViewCoordinator: ObservableObject {
             return
         }
         DispatchQueue.main.async {
+            // Single write so `sneakPeek.didSet` (which schedules the auto-hide)
+            // fires once, not once per field — the per-field writes raced the hide
+            // Task and could wedge `show == true` with no pending hide.
+            var updated = self.sneakPeek
+            updated.show = status
+            updated.type = type
+            updated.value = value
+            updated.icon = icon
+            updated.title = title
+            updated.subtitle = subtitle
+            updated.accentColor = accentColor
+            updated.styleOverride = styleOverride
+            updated.targetScreenName = targetScreen?.localizedName
             withAnimation(.smooth(duration: 0.3)) {
-                self.sneakPeek.show = status
-                self.sneakPeek.type = type
-                self.sneakPeek.value = value
-                self.sneakPeek.icon = icon
-                self.sneakPeek.title = title
-                self.sneakPeek.subtitle = subtitle
-                self.sneakPeek.accentColor = accentColor
-                self.sneakPeek.styleOverride = styleOverride
-                self.sneakPeek.targetScreenName = targetScreen?.localizedName
+                self.sneakPeek = updated
             }
         }
     }

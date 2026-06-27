@@ -28,21 +28,27 @@ actor AnimatedArtworkManager {
 
     func fetchAnimatedArtworkURL(title: String, artist: String) async -> URL? {
         let key = "\(title)|\(artist)"
-        if key == cachedKey, let url = cachedVideoURL {
-            return url
+        if key == cachedKey {
+            return cachedVideoURL
         }
 
-        guard await requestMusicAuthorization() else { return nil }
+        cachedKey = key
+
+        guard await requestMusicAuthorization() else {
+            cachedVideoURL = nil
+            return nil
+        }
 
         guard let songID = await searchSongID(title: title, artist: artist) else {
+            cachedVideoURL = nil
             return nil
         }
 
         guard let videoURL = await fetchEditorialVideoURL(songID: songID) else {
+            cachedVideoURL = nil
             return nil
         }
 
-        cachedKey = key
         cachedSongID = songID
         cachedVideoURL = videoURL
         return videoURL

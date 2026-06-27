@@ -1073,6 +1073,8 @@ struct GeneralSettings: View {
     @Default(.nonNotchHeight) var nonNotchHeight
     @Default(.nonNotchHeightMode) var nonNotchHeightMode
     @Default(.notchHeight) var notchHeight
+    @Default(.closedNotchWidth) var closedNotchWidth
+    @Default(.customizePhysicalNotchWidth) var customizePhysicalNotchWidth
     @Default(.notchHeightMode) var notchHeightMode
     @Default(.showOnAllDisplays) var showOnAllDisplays
     @Default(.automaticallySwitchDisplay) var automaticallySwitchDisplay
@@ -4213,6 +4215,8 @@ struct Appearance: View {
     @Default(.customAppIcons) private var customAppIcons
     @Default(.selectedAppIconID) private var selectedAppIconID
     @Default(.openNotchWidth) var openNotchWidth
+    @Default(.closedNotchWidth) var closedNotchWidth
+    @Default(.customizePhysicalNotchWidth) var customizePhysicalNotchWidth
     @Default(.enableMinimalisticUI) var enableMinimalisticUI
     @Default(.lockScreenGlassCustomizationMode) private var lockScreenGlassCustomizationMode
     @Default(.lockScreenGlassStyle) private var lockScreenGlassStyle
@@ -4855,6 +4859,9 @@ struct Appearance: View {
             let recommendedMin = currentRecommendedMinimumNotchWidth()
             let tabCount = enabledStandardTabCount()
             let dynamicRange = Double(recommendedMin)...900
+            
+            let closedRange = Double(80)...400
+            let minimalisticRange = Double(250)...600
 
             let widthBinding = Binding<Double>(
                 get: { Double(openNotchWidth) },
@@ -4866,8 +4873,44 @@ struct Appearance: View {
                     }
                 }
             )
+            
+            let closedWidthBinding = Binding<Double>(
+                get: { Double(closedNotchWidth) },
+                set: { newValue in
+                    let clamped = min(max(newValue, closedRange.lowerBound), closedRange.upperBound)
+                    let value = CGFloat(clamped)
+                    if closedNotchWidth != value {
+                        closedNotchWidth = value
+                        NotificationCenter.default.post(name: Notification.Name.notchHeightChanged, object: nil)
+                    }
+                }
+            )
 
             VStack(alignment: .leading, spacing: 10) {
+                Defaults.Toggle(key: .customizePhysicalNotchWidth) {
+                    Text("Customize physical notch width")
+                }
+                .onChange(of: customizePhysicalNotchWidth) {
+                    NotificationCenter.default.post(name: Notification.Name.notchHeightChanged, object: nil)
+                }
+                .settingsHighlight(id: highlightID("Customize physical notch width"))
+                
+                Slider(
+                    value: closedWidthBinding,
+                    in: closedRange,
+                    step: 5
+                ) {
+                    HStack {
+                        Text("Closed notch / pill width")
+                        Spacer()
+                        Text("\(Int(closedNotchWidth)) px")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .settingsHighlight(id: highlightID("Closed notch / pill width"))
+
+                Divider().padding(.vertical, 4)
+
                 Slider(
                     value: widthBinding,
                     in: dynamicRange,
@@ -4896,7 +4939,7 @@ struct Appearance: View {
                 }
 
                 let description = enableMinimalisticUI
-                ? String(localized: "Width adjustments apply only to the standard notch layout. Disable Minimalistic UI to edit this value.")
+                ? String(localized: "Expanded width adjustments apply only to the standard notch layout. Disable Minimalistic UI to edit this value.")
                 : String(localized: "Recommended minimum width adjusts automatically based on the number of enabled tabs.")
 
                 Text(description)
@@ -6474,6 +6517,7 @@ struct TimerSettings: View {
     @Default(.timerControlWindowEnabled) private var controlWindowEnabled
     @Default(.mirrorSystemTimer) private var mirrorSystemTimer
     @Default(.timerDisplayMode) private var timerDisplayMode
+    @Default(.timerInputStyle) private var timerInputStyle
     @Default(.enableLockScreenTimerWidget) private var enableLockScreenTimerWidget
     @Default(.lockScreenTimerWidgetUsesBlur) private var timerGlassModeIsGlass
     @Default(.lockScreenTimerGlassStyle) private var lockScreenTimerGlassStyle
@@ -6699,6 +6743,14 @@ struct TimerSettings: View {
                 ColorPicker("Solid colour", selection: $solidColor, supportsOpacity: false)
                     .settingsHighlight(id: highlightID("Solid colour"))
             }
+
+            Picker("Custom timer style", selection: $timerInputStyle) {
+                ForEach(TimerInputStyle.allCases) { style in
+                    Text(style.displayName).tag(style)
+                }
+            }
+            .pickerStyle(.segmented)
+            .settingsHighlight(id: highlightID("Custom timer style"))
 
             Toggle("Show timer name", isOn: $showsLabel)
             Toggle("Show countdown", isOn: $showsCountdown)
@@ -8084,6 +8136,10 @@ struct SettingsPermissionCallout: View {
 struct NotesSettingsView: View {
     @EnvironmentObject var vm: DynamicIslandViewModel
     @ObservedObject var coordinator = DynamicIslandViewCoordinator.shared
+    @ObservedObject private var appleNotesSync = AppleNotesSyncManager.shared
+    @Default(.enableNotes) private var enableNotes
+    @Default(.enableAppleNotesSync) private var enableAppleNotesSync
+    @Default(.appleNotesLastSyncDate) private var appleNotesLastSyncDate
 
     private func highlightID(_ title: String) -> String {
         SettingsTab.notes.highlightID(for: title)
@@ -8095,7 +8151,7 @@ struct NotesSettingsView: View {
                 Defaults.Toggle(key: .enableNotes) {
                     Text("Enable Notes")
                 }
-                if Defaults[.enableNotes] {
+                if enableNotes {
                     Defaults.Toggle(key: .enableNotePinning) {
                         Text("Enable Note Pinning")
                     }
@@ -8118,6 +8174,56 @@ struct NotesSettingsView: View {
                 Text("Customize how you organize and create notes. Enabling color filtering and search helps manage large lists.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+
+            if enableNotes {
+                Section {
+                    Defaults.Toggle(key: .enableAppleNotesSync) {
+                        Text("Sync with Apple Notes")
+                    }
+                    .settingsHighlight(id: highlightID("Sync with Apple Notes"))
+
+                    if enableAppleNotesSync {
+                        Button {
+                            Task {
+                                let notes = Defaults[.savedNotes]
+                                if let merged = await appleNotesSync.sync(localNotes: notes) {
+                                    Defaults[.savedNotes] = merged
+                                }
+                            }
+                        } label: {
+                            HStack {
+                                Text("Sync Now")
+                                Spacer()
+                                if appleNotesSync.isSyncing {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                }
+                            }
+                        }
+                        .disabled(appleNotesSync.isSyncing)
+                        .settingsHighlight(id: highlightID("Sync Now"))
+
+                        if let lastSync = appleNotesLastSyncDate {
+                            LabeledContent("Last synced") {
+                                Text(lastSync, style: .relative)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+
+                        if let error = appleNotesSync.lastError {
+                            Text(error)
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                        }
+                    }
+                } header: {
+                    Text("Apple Notes")
+                } footer: {
+                    Text("Two-way sync with the macOS Notes app. Notes created in Atoll appear in the Atoll folder in Notes, and your existing Apple Notes are imported into the notch. Grant Automation permission for Notes when prompted.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .navigationTitle("Notes")

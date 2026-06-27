@@ -29,11 +29,14 @@ class SystemOSDManager {
     private struct SuppressionState {
         var task: Task<Void, Never>?
         var lastSuspendedPID: Int32 = -1
+        // True while suppressing the native OSD (between disable/enableSystemHUD).
+        var active = false
     }
     private static let suppressionState = OSAllocatedUnfairLock(initialState: SuppressionState())
 
     /// Re-enables the system HUD by restarting OSDUIHelper
     public static func enableSystemHUD() {
+        suppressionState.withLock { $0.active = false }
         stopSuppressionWatcher()
         Task.detached(priority: .background) {
             await enableSystemHUDAsync()
@@ -93,10 +96,26 @@ class SystemOSDManager {
     /// background watcher that re-suspends any future incarnation launchd
     /// spawns (macOS auto-exits OSDUIHelper on idle).
     public static func disableSystemHUD() {
+        suppressionState.withLock { $0.active = true }
         Task.detached(priority: .background) {
             await disableSystemHUDAsync()
         }
         startSuppressionWatcher()
+    }
+
+    /// Immediately SIGSTOPs OSDUIHelper, bypassing the 150ms watcher poll. The
+    /// CoreAudio volume write wakes/respawns the helper to draw the native OSD
+    /// (brightness's private APIs never do), and the watcher can lose that race.
+    /// No-op unless suppression is active.
+    public static func suppressNativeOSDNow() {
+        let active = suppressionState.withLock { $0.active }
+        guard active else { return }
+        Task.detached(priority: .userInitiated) {
+            suspendOSDUIHelper()
+            if let pid = osduiHelperPID() {
+                suppressionState.withLock { $0.lastSuspendedPID = pid }
+            }
+        }
     }
     
     private static func disableSystemHUDAsync() async {

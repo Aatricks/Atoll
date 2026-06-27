@@ -312,13 +312,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     private func cleanupWindows(shouldInvert: Bool = false) {
         if shouldInvert ? !Defaults[.showOnAllDisplays] : Defaults[.showOnAllDisplays] {
-            for window in windows.values {
+            for (screen, window) in windows {
+                // Tear down the hosted ContentView before dropping the window
+                // (`.onDisappear` is unreliable for borderless panels).
+                viewModels[screen]?.onViewTeardown?()
+                viewModels[screen]?.onViewTeardown = nil
                 window.close()
                 NotchSpaceManager.shared.notchSpace.windows.remove(window)
             }
             windows.removeAll()
             viewModels.removeAll()
         } else if let window = window {
+            vm.onViewTeardown?()
+            vm.onViewTeardown = nil
             window.close()
             NotchSpaceManager.shared.notchSpace.windows.remove(window)
             self.window = nil
@@ -445,7 +451,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         
         // Use minimalistic or normal size based on settings
-        var baseSize = Defaults[.enableMinimalisticUI] ? minimalisticOpenNotchSize : openNotchSize
+        var baseSize = Defaults[.enableMinimalisticUI] ? minimalisticOpenNotchSize(isDynamicIslandMode: shouldUseDynamicIslandMode(for: vm.screen)) : openNotchSize
         
         // Use a consistent height for different view types
         if coordinator.currentView == .timer {
@@ -989,6 +995,40 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         permissionsMenuItem.submenu = permissionsSubmenu
         mainMenu.insertItem(permissionsMenuItem, at: insertionIndex + 2)
 
+        let toolsMenuItem = NSMenuItem(title: "Tools", action: nil, keyEquivalent: "")
+        toolsMenuItem.identifier = NSUserInterfaceItemIdentifier("Atoll.Tools.Menu")
+        let toolsSubmenu = NSMenu(title: "Tools")
+
+        let loggingLevelItem = NSMenuItem(title: "Logging Level", action: nil, keyEquivalent: "")
+        let loggingLevelSubmenu = NSMenu(title: "Logging Level")
+        
+        let levels: [(String, LogLevel)] = [
+            ("No Logging", .none),
+            ("Error", .error),
+            ("Warning", .warning),
+            ("Info", .info),
+            ("Debug", .debug)
+        ]
+        
+        for (title, level) in levels {
+            let item = NSMenuItem(title: title, action: #selector(setLogLevel(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = level.rawValue
+            item.state = (Defaults[.logLevel] == level) ? NSControl.StateValue.on : NSControl.StateValue.off
+            loggingLevelSubmenu.addItem(item)
+        }
+        loggingLevelItem.submenu = loggingLevelSubmenu
+        toolsSubmenu.addItem(loggingLevelItem)
+
+        toolsSubmenu.addItem(NSMenuItem.separator())
+        
+        let exportLogsItem = NSMenuItem(title: "Export Logs", action: #selector(exportLogs), keyEquivalent: "")
+        exportLogsItem.target = self
+        toolsSubmenu.addItem(exportLogsItem)
+
+        toolsMenuItem.submenu = toolsSubmenu
+        mainMenu.insertItem(toolsMenuItem, at: insertionIndex + 3)
+
         updateFocusMenuState()
     }
 
@@ -1044,6 +1084,90 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             guard let url = URL(string: candidate) else { continue }
             if NSWorkspace.shared.open(url) {
                 return
+            }
+        }
+    }
+
+    @objc private func setLogLevel(_ sender: NSMenuItem) {
+        guard let level = LogLevel(rawValue: sender.tag) else { return }
+        Defaults[.logLevel] = level
+        
+        guard let mainMenu = NSApp.mainMenu,
+              let toolsItem = mainMenu.item(withTitle: "Tools"),
+              let toolsMenu = toolsItem.submenu,
+              let loggingItem = toolsMenu.items.first(where: { $0.title == "Logging Level" }),
+              let loggingSubmenu = loggingItem.submenu else { return }
+              
+        for item in loggingSubmenu.items {
+            item.state = (item.tag == level.rawValue) ? NSControl.StateValue.on : NSControl.StateValue.off
+        }
+    }
+
+    @objc private func exportLogs() {
+        let savePanel = NSSavePanel()
+        savePanel.nameFieldStringValue = "Atoll_Logs.zip"
+        savePanel.title = "Export Logs & Crash Reports"
+        
+        savePanel.begin { response in
+            guard response == .OK, let url = savePanel.url else { return }
+            
+            Task {
+                do {
+                    let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+                    
+                    let logsFile = tempDir.appendingPathComponent("app_logs.txt")
+                    let logProcess = Process()
+                    logProcess.executableURL = URL(fileURLWithPath: "/usr/bin/log")
+                    logProcess.arguments = ["show", "--predicate", "subsystem == 'com.Ebullioscopic.Atoll' OR subsystem == 'com.Ebullioscopic.Atoll.dev'", "--info", "--debug", "--last", "2d"]
+                    
+                    let pipe = Pipe()
+                    logProcess.standardOutput = pipe
+                    try logProcess.run()
+                    logProcess.waitUntilExit()
+                    
+                    let logData = pipe.fileHandleForReading.readDataToEndOfFile()
+                    try logData.write(to: logsFile)
+                    
+                    let diagDir = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Logs/DiagnosticReports")
+                    let allFiles = (try? FileManager.default.contentsOfDirectory(at: diagDir, includingPropertiesForKeys: nil)) ?? []
+                    for file in allFiles where file.lastPathComponent.contains("Atoll") {
+                        try? FileManager.default.copyItem(at: file, to: tempDir.appendingPathComponent(file.lastPathComponent))
+                    }
+                    
+                    let sysDiagDir = URL(fileURLWithPath: "/Library/Logs/DiagnosticReports")
+                    let sysFiles = (try? FileManager.default.contentsOfDirectory(at: sysDiagDir, includingPropertiesForKeys: nil)) ?? []
+                    for file in sysFiles where file.lastPathComponent.contains("Atoll") {
+                        try? FileManager.default.copyItem(at: file, to: tempDir.appendingPathComponent(file.lastPathComponent))
+                    }
+                    
+                    let zipProcess = Process()
+                    zipProcess.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
+                    zipProcess.currentDirectoryURL = tempDir
+                    let items = (try? FileManager.default.contentsOfDirectory(atPath: tempDir.path)) ?? []
+                    zipProcess.arguments = ["-r", url.path] + items
+                    
+                    try zipProcess.run()
+                    zipProcess.waitUntilExit()
+                    
+                    try? FileManager.default.removeItem(at: tempDir)
+                    
+                    DispatchQueue.main.async {
+                        let alert = NSAlert()
+                        alert.messageText = "Logs Exported"
+                        alert.informativeText = "Logs and crash reports have been successfully exported to \(url.lastPathComponent)."
+                        alert.alertStyle = .informational
+                        alert.runModal()
+                    }
+                } catch {
+                    DispatchQueue.main.async {
+                        let alert = NSAlert()
+                        alert.messageText = "Export Failed"
+                        alert.informativeText = "Failed to export logs: \(error.localizedDescription)"
+                        alert.alertStyle = .critical
+                        alert.runModal()
+                    }
+                }
             }
         }
     }
@@ -1203,6 +1327,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             
             for screen in windows.keys where !currentScreens.contains(screen) {
                 if let window = windows[screen] {
+                    viewModels[screen]?.onViewTeardown?()
+                    viewModels[screen]?.onViewTeardown = nil
                     window.close()
                     NotchSpaceManager.shared.notchSpace.windows.remove(window)
                     windows.removeValue(forKey: screen)

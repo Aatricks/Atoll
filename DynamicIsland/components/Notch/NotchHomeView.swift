@@ -376,7 +376,7 @@ struct MusicControlsView: View {
     }
 
     private var musicSlider: some View {
-        TimelineView(.animation(minimumInterval: 1.0, paused: isProgressTimelinePaused)) { timeline in
+        TimelineView(.animation(paused: isProgressTimelinePaused)) { timeline in
             MusicSliderView(
                 sliderValue: $sliderValue,
                 duration: $musicManager.songDuration,

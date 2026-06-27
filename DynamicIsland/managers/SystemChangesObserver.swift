@@ -207,10 +207,14 @@ final class SystemChangesObserver: MediaKeyInterceptorDelegate {
 
     @MainActor
     private func sendVolumeNotification(value: Float, isMuted: Bool) {
+        // The CoreAudio volume write wakes the native OSD; suppress it immediately
+        // so only our notch HUD shows (parity with brightness). No-op unless active.
+        SystemOSDManager.suppressNativeOSDNow()
+
         if HUDSuppressionCoordinator.shared.shouldSuppressVolumeHUD {
             return
         }
-        
+
         // Send to Circular HUD if enabled
         if Defaults[.enableCircularHUD] && Defaults[.enableVolumeHUD] {
             Task { @MainActor in

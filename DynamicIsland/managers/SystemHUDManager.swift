@@ -217,10 +217,27 @@ class SystemHUDManager {
     
     func setup(coordinator: DynamicIslandViewCoordinator) {
         self.coordinator = coordinator
-        
+
         // Initialize OSD manager
         Task { @MainActor in
             CustomOSDWindowManager.shared.initialize()
+        }
+
+        // Re-resolve flags when a DDC helper starts/stops so brightness handling
+        // recovers if the helper is quit while integration stays enabled.
+        Task { @MainActor in
+            Publishers.Merge(
+                BetterDisplayManager.shared.$isRunning.removeDuplicates().map { _ in () },
+                LunarManager.shared.$isRunning.removeDuplicates().map { _ in () }
+            )
+            .sink { [weak self] in
+                guard let self, self.isSetupComplete,
+                      Defaults[.enableThirdPartyDDCIntegration] else { return }
+                Task { @MainActor in
+                    await self.startSystemObserver()
+                }
+            }
+            .store(in: &self.cancellables)
         }
         
         // Start observer if any HUD/OSD is enabled
@@ -254,9 +271,17 @@ class SystemHUDManager {
             keyboardBacklightEnabled = Defaults[.enableKeyboardBacklightHUD]
         }
 
-        // When third-party DDC integration is on, stop intercepting brightness and
-        // Cmd+Brightness keys so the external app receives them and sends DDC/OSD events.
-        if Defaults[.enableThirdPartyDDCIntegration] {
+        // Surrender brightness to the DDC helper only when it is actually running;
+        // otherwise keep handling it ourselves so HUDs still show (and the native
+        // OSD isn't left permanently suppressed) when the helper has been quit.
+        let ddcProviderRunning: Bool = {
+            switch Defaults[.thirdPartyDDCProvider] {
+            case .betterDisplay: return BetterDisplayManager.checkRunning()
+            case .lunar: return LunarManager.checkRunning()
+            }
+        }()
+
+        if Defaults[.enableThirdPartyDDCIntegration] && ddcProviderRunning {
             brightnessEnabled = false
             keyboardBacklightEnabled = false
 

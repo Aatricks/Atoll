@@ -84,8 +84,21 @@ private actor MusicExplicitnessResolver {
     static let shared = MusicExplicitnessResolver()
 
     private let session = URLSession(configuration: .ephemeral)
+    private static let cacheLimit = 300
     private var cache: [LookupKey: Bool] = [:]
+    private var cacheOrder: [LookupKey] = []
     private var inFlightTasks: [LookupKey: Task<Bool, Never>] = [:]
+
+    private func store(_ value: Bool, for key: LookupKey) {
+        if cache[key] == nil {
+            cacheOrder.append(key)
+            while cacheOrder.count > Self.cacheLimit {
+                let evicted = cacheOrder.removeFirst()
+                cache.removeValue(forKey: evicted)
+            }
+        }
+        cache[key] = value
+    }
 
     func resolve(title: String, artist: String, album: String) async -> Bool {
         let key = LookupKey(title: title, artist: artist, album: album)
@@ -105,7 +118,7 @@ private actor MusicExplicitnessResolver {
 
         inFlightTasks[key] = task
         let result = await task.value
-        cache[key] = result
+        store(result, for: key)
         inFlightTasks[key] = nil
         return result
     }
@@ -231,8 +244,21 @@ private actor SpotifyExplicitnessResolver {
         return URLSession(configuration: configuration)
     }()
 
+    private static let cacheLimit = 300
     private var cache: [LookupKey: Bool] = [:]
+    private var cacheOrder: [LookupKey] = []
     private var inFlightTasks: [LookupKey: Task<Bool?, Never>] = [:]
+
+    private func store(_ value: Bool, for key: LookupKey) {
+        if cache[key] == nil {
+            cacheOrder.append(key)
+            while cacheOrder.count > Self.cacheLimit {
+                let evicted = cacheOrder.removeFirst()
+                cache.removeValue(forKey: evicted)
+            }
+        }
+        cache[key] = value
+    }
 
     func resolve(key: LookupKey) async -> Bool? {
         if let cached = cache[key] {
@@ -250,7 +276,7 @@ private actor SpotifyExplicitnessResolver {
         inFlightTasks[key] = task
         let result = await task.value
         if let result {
-            cache[key] = result
+            store(result, for: key)
         }
         inFlightTasks[key] = nil
         return result
@@ -493,8 +519,23 @@ class MusicManager: ObservableObject {
     private var lyricsFetchKey: LyricsLookupKey?
     private var activeLyricsKey: LyricsLookupKey?
     private var lyricsCache: [LyricsLookupKey: [LyricLine]] = [:]
+    // Bounded, insertion-order eviction so the cache cannot grow unboundedly.
+    private static let lyricsCacheLimit = 80
+    private var lyricsCacheOrder: [LyricsLookupKey] = []
     private var explicitLookupTask: Task<Void, Never>?
     private var explicitLookupKey: String?
+
+    /// Inserts lyrics with insertion-order eviction to keep the cache bounded.
+    private func storeLyricsInCache(_ lyrics: [LyricLine], for key: LyricsLookupKey) {
+        if lyricsCache[key] == nil {
+            lyricsCacheOrder.append(key)
+            while lyricsCacheOrder.count > Self.lyricsCacheLimit {
+                let evicted = lyricsCacheOrder.removeFirst()
+                lyricsCache.removeValue(forKey: evicted)
+            }
+        }
+        lyricsCache[key] = lyrics
+    }
 
     private(set) var artworkData: Data? = nil
 
@@ -1397,7 +1438,7 @@ class MusicManager: ObservableObject {
 
                 await MainActor.run {
                     guard self.activeLyricsKey == key else { return }
-                    self.lyricsCache[key] = lyrics
+                    self.storeLyricsInCache(lyrics, for: key)
                     self.lyricsFetchKey = nil
                     self.lyricsFetchTask = nil
                     self.applyLyricsToDisplay(lyrics)

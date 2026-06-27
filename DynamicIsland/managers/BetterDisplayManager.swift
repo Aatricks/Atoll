@@ -172,7 +172,7 @@ final class BetterDisplayManager: ObservableObject {
     }
 
     /// Check if BetterDisplay is currently running.
-    static func checkRunning() -> Bool {
+    nonisolated static func checkRunning() -> Bool {
         NSWorkspace.shared.runningApplications.contains(where: { $0.bundleIdentifier == bundleID })
     }
 
