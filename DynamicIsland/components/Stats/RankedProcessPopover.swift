@@ -38,6 +38,8 @@ struct RankedProcessPopover: View {
             return (380, 360, 0)
         case .network, .disk:
             return (360, 320, 0)
+        case .power:
+            return (380, 380, 0)
         }
     }
     
@@ -80,6 +82,8 @@ struct RankedProcessPopover: View {
             NetworkStatsDetailView()
         case .disk:
             DiskStatsDetailView()
+        case .power:
+            PowerStatsDetailView()
         }
     }
 }

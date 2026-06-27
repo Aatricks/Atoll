@@ -7074,6 +7074,7 @@ struct StatsSettings: View {
     @Default(.showGpuGraph) var showGpuGraph
     @Default(.showNetworkGraph) var showNetworkGraph
     @Default(.showDiskGraph) var showDiskGraph
+    @Default(.showPowerGraph) var showPowerGraph
     @Default(.cpuTemperatureUnit) var cpuTemperatureUnit
 
     private func highlightID(_ title: String) -> String {
@@ -7081,7 +7082,7 @@ struct StatsSettings: View {
     }
 
     var enabledGraphsCount: Int {
-        [showCpuGraph, showMemoryGraph, showGpuGraph, showNetworkGraph, showDiskGraph].filter { $0 }.count
+        [showCpuGraph, showMemoryGraph, showGpuGraph, showNetworkGraph, showDiskGraph, showPowerGraph].filter { $0 }.count
     }
 
     private var formattedUpdateInterval: String {
@@ -7196,6 +7197,10 @@ struct StatsSettings: View {
                         Text("Disk I/O")
                     }
                     .settingsHighlight(id: highlightID("Disk I/O"))
+                    Defaults.Toggle(key: .showPowerGraph) {
+                        Text("Power Usage")
+                    }
+                    .settingsHighlight(id: highlightID("Power Usage"))
                 } header: {
                     Text("Graph Visibility")
                 } footer: {
@@ -7281,6 +7286,15 @@ struct StatsSettings: View {
                                 Text("Disk Write")
                                 Spacer()
                                 Text(String(format: "%.1f MB/s", statsManager.diskWrite))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+
+                        if showPowerGraph {
+                            HStack {
+                                Text("Power Usage")
+                                Spacer()
+                                Text(statsManager.powerUsageString)
                                     .foregroundStyle(.secondary)
                             }
                         }

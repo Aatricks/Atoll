@@ -64,16 +64,19 @@ struct NotchStatsView: View {
     @Default(.showGpuGraph) var showGpuGraph
     @Default(.showNetworkGraph) var showNetworkGraph
     @Default(.showDiskGraph) var showDiskGraph
+    @Default(.showPowerGraph) var showPowerGraph
     @State private var showingCPUPopover = false
     @State private var showingMemoryPopover = false
     @State private var showingGPUPopover = false
     @State private var showingNetworkPopover = false
     @State private var showingDiskPopover = false
+    @State private var showingPowerPopover = false
     @State private var isHoveringCPUPopover = false
     @State private var isHoveringMemoryPopover = false
     @State private var isHoveringGPUPopover = false
     @State private var isHoveringNetworkPopover = false
     @State private var isHoveringDiskPopover = false
+    @State private var isHoveringPowerPopover = false
     @EnvironmentObject var vm: DynamicIslandViewModel
     @ObservedObject var coordinator = DynamicIslandViewCoordinator.shared
 
@@ -138,6 +141,16 @@ struct NotchStatsView: View {
             ))
         }
 
+        if showPowerGraph {
+            graphs.append(SingleGraphData(
+                title: String(localized: "Power"),
+                value: statsManager.powerUsageString,
+                data: statsManager.powerHistory,
+                color: .yellow,
+                icon: "bolt.fill"
+            ))
+        }
+
         return graphs
     }
 
@@ -176,7 +189,7 @@ struct NotchStatsView: View {
                     }
                 }
             }
-        } else {
+        } else if graphCount == 5 {
             // 5 graphs: First row 3 graphs, second row 2 graphs (half-width each)
             VStack(spacing: statsGridSpacingHeight) {
                 LazyVGrid(
@@ -189,6 +202,26 @@ struct NotchStatsView: View {
                 }
                 LazyVGrid(
                     columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 2),
+                    spacing: 8
+                ) {
+                    ForEach(3..<graphCount, id: \.self) { index in
+                        graphViewForIndex(index)
+                    }
+                }
+            }
+        } else {
+            // 6 graphs: two rows of 3 (3+3)
+            VStack(spacing: statsGridSpacingHeight) {
+                LazyVGrid(
+                    columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3),
+                    spacing: 8
+                ) {
+                    ForEach(0..<3, id: \.self) { index in
+                        graphViewForIndex(index)
+                    }
+                }
+                LazyVGrid(
+                    columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3),
                     spacing: 8
                 ) {
                     ForEach(3..<graphCount, id: \.self) { index in
@@ -225,6 +258,8 @@ struct NotchStatsView: View {
                             isHoveringNetworkPopover = hovering
                         case "Disk":
                             isHoveringDiskPopover = hovering
+                        case "Power":
+                            isHoveringPowerPopover = hovering
                         default:
                             break
                         }
@@ -242,6 +277,8 @@ struct NotchStatsView: View {
                         isHoveringNetworkPopover = false
                     case "Disk":
                         isHoveringDiskPopover = false
+                    case "Power":
+                        isHoveringPowerPopover = false
                     default:
                         break
                     }
@@ -275,6 +312,8 @@ struct NotchStatsView: View {
             showingNetworkPopover = true
         case "Disk":
             showingDiskPopover = true
+        case "Power":
+            showingPowerPopover = true
         default:
             break
         }
@@ -292,6 +331,8 @@ struct NotchStatsView: View {
             return $showingNetworkPopover
         case "Disk":
             return $showingDiskPopover
+        case "Power":
+            return $showingPowerPopover
         default:
             return .constant(false)
         }
@@ -309,6 +350,8 @@ struct NotchStatsView: View {
             return .network
         case "Disk":
             return .disk
+        case "Power":
+            return .power
         default:
             return nil
         }
@@ -397,6 +440,9 @@ struct NotchStatsView: View {
         .onChange(of: showingDiskPopover) { _, newValue in
             updateStatsPopoverState()
         }
+        .onChange(of: showingPowerPopover) { _, newValue in
+            updateStatsPopoverState()
+        }
         .onChange(of: isHoveringCPUPopover) { _, _ in
             updateStatsPopoverState()
         }
@@ -412,9 +458,12 @@ struct NotchStatsView: View {
         .onChange(of: isHoveringDiskPopover) { _, _ in
             updateStatsPopoverState()
         }
+        .onChange(of: isHoveringPowerPopover) { _, _ in
+            updateStatsPopoverState()
+        }
     }
     private func updateStatsPopoverState() {
-        let anyPopoverOpen = showingCPUPopover || showingMemoryPopover || showingGPUPopover || showingNetworkPopover || showingDiskPopover
+        let anyPopoverOpen = showingCPUPopover || showingMemoryPopover || showingGPUPopover || showingNetworkPopover || showingDiskPopover || showingPowerPopover
         let newState = anyPopoverOpen
         if vm.isStatsPopoverActive != newState {
             vm.isStatsPopoverActive = newState
@@ -425,6 +474,7 @@ struct NotchStatsView: View {
             Log.debug("   GPU open=\(showingGPUPopover)")
             Log.debug("   Network open=\(showingNetworkPopover)")
             Log.debug("   Disk open=\(showingDiskPopover)")
+            Log.debug("   Power open=\(showingPowerPopover)")
             #endif
         }
     }
@@ -495,7 +545,7 @@ struct UnifiedStatsCard: View {
             .frame(height: 36) // Match boring.notch exactly - reduced from 50
             
             // Click hint - shown for graphs that open popovers
-            if ["CPU", "Memory", "GPU", "Network", "Disk"].contains(graphData.title) {
+            if ["CPU", "Memory", "GPU", "Network", "Disk", "Power"].contains(graphData.title) {
                 Text("Click for details")
                     .font(.caption2)
                     .foregroundStyle(Color.white.opacity(0.75))

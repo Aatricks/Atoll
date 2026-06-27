@@ -62,6 +62,7 @@ struct ContentView: View {
     @Default(.showGpuGraph) var showGpuGraph
     @Default(.showNetworkGraph) var showNetworkGraph
     @Default(.showDiskGraph) var showDiskGraph
+    @Default(.showPowerGraph) var showPowerGraph
     @Default(.enableReminderLiveActivity) var enableReminderLiveActivity
     @Default(.enableTimerFeature) var enableTimerFeature
     @Default(.timerDisplayMode) var timerDisplayMode
@@ -2164,6 +2165,7 @@ struct ContentView: View {
         if showGpuGraph { enabledCount += 1 }
         if showNetworkGraph { enabledCount += 1 }
         if showDiskGraph { enabledCount += 1 }
+        if showPowerGraph { enabledCount += 1 }
         return enabledCount
     }
 

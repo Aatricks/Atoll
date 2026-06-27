@@ -409,7 +409,9 @@ class StatsManager: ObservableObject {
     @Published var networkUploadHistory: [Double] = []
     @Published var diskReadHistory: [Double] = []
     @Published var diskWriteHistory: [Double] = []
-    
+    @Published var powerHistory: [Double] = []
+    @Published private(set) var powerMetrics: PowerMetrics = .zero
+
     private var monitoringTimer: Timer?
     private var delayedStopTimer: Timer?
     private var delayedStartTimer: Timer?
@@ -460,6 +462,7 @@ class StatsManager: ObservableObject {
     private var isProcessRefreshInFlight = false
     private let gpuCollector = GPUInfoCollector()
     private let cpuSensorCollector = CPUSensorCollector()
+    private let powerSensorCollector = PowerSensorCollector()
     private var cancellables = Set<AnyCancellable>()
     private let minUpdateInterval: TimeInterval = 1.0
     private let maxUpdateInterval: TimeInterval = 60.0
@@ -476,7 +479,8 @@ class StatsManager: ObservableObject {
         networkUploadHistory = Array(repeating: 0.0, count: maxHistoryPoints)
         diskReadHistory = Array(repeating: 0.0, count: maxHistoryPoints)
         diskWriteHistory = Array(repeating: 0.0, count: maxHistoryPoints)
-        
+        powerHistory = Array(repeating: 0.0, count: maxHistoryPoints)
+
         // Initialize baseline network stats
         let initialStats = getNetworkStats()
         previousNetworkStats = initialStats
@@ -759,7 +763,9 @@ class StatsManager: ObservableObject {
         if let frequencyMetrics = cpuSensorCollector.readFrequency() {
             cpuFrequency = frequencyMetrics
         }
-        
+        let power = powerSensorCollector.readPower()
+        powerMetrics = power
+
         // Update history arrays (sliding window)
         updateHistory(value: newCpuUsage, history: &cpuHistory)
         updateHistory(value: newMemoryUsage, history: &memoryHistory)
@@ -768,6 +774,7 @@ class StatsManager: ObservableObject {
         updateHistory(value: uploadSpeed, history: &networkUploadHistory)
         updateHistory(value: readSpeed, history: &diskReadHistory)
         updateHistory(value: writeSpeed, history: &diskWriteHistory)
+        updateHistory(value: power.systemWatts, history: &powerHistory)
         
         // Update previous stats for next calculation
         previousNetworkStats = currentNetworkStats
@@ -1369,7 +1376,21 @@ class StatsManager: ObservableObject {
     var diskWriteString: String {
         return String(format: "%.1f MB/s", diskWrite)
     }
-    
+
+    var powerUsageString: String {
+        return StatsFormatting.watts(powerMetrics.systemWatts)
+    }
+
+    var maxPowerUsage: Double {
+        return powerHistory.max() ?? 0.0
+    }
+
+    var avgPowerUsage: Double {
+        let nonZeroValues = powerHistory.filter { $0 > 0 }
+        guard !nonZeroValues.isEmpty else { return 0.0 }
+        return nonZeroValues.reduce(0, +) / Double(nonZeroValues.count)
+    }
+
     var maxCpuUsage: Double {
         return cpuHistory.max() ?? 0.0
     }
@@ -1409,8 +1430,9 @@ class StatsManager: ObservableObject {
         networkUploadHistory = Array(repeating: 0.0, count: maxHistoryPoints)
         diskReadHistory = Array(repeating: 0.0, count: maxHistoryPoints)
         diskWriteHistory = Array(repeating: 0.0, count: maxHistoryPoints)
+        powerHistory = Array(repeating: 0.0, count: maxHistoryPoints)
     }
-    
+
     // MARK: - Process Monitoring Methods
     @MainActor
     func getProcessesRankedByCPU() -> [ProcessStats] {

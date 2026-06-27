@@ -69,6 +69,13 @@ enum StatsFormatting {
     static func percentage(_ value: Double) -> String {
         String(format: "%.1f%%", value)
     }
+
+    static func watts(_ value: Double) -> String {
+        if value >= 10 {
+            return String(format: "%.0f W", value)
+        }
+        return String(format: "%.1f W", value)
+    }
     
     static func gigabytes(_ value: Double) -> String {
         let formatter = NumberFormatter()

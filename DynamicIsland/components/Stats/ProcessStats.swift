@@ -47,7 +47,8 @@ enum ProcessRankingType {
     case gpu
     case network
     case disk
-    
+    case power
+
     var title: String {
         switch self {
         case .cpu: return "CPU Usage"
@@ -55,9 +56,10 @@ enum ProcessRankingType {
         case .gpu: return "GPU Usage"
         case .network: return "Network Activity"
         case .disk: return "Disk Activity"
+        case .power: return "Power Usage"
         }
     }
-    
+
     var icon: String {
         switch self {
         case .cpu: return "cpu"
@@ -65,9 +67,10 @@ enum ProcessRankingType {
         case .gpu: return "display"
         case .network: return "network"
         case .disk: return "internaldrive"
+        case .power: return "bolt.fill"
         }
     }
-    
+
     var color: Color {
         switch self {
         case .cpu: return .blue
@@ -75,6 +78,7 @@ enum ProcessRankingType {
         case .gpu: return .purple
         case .network: return .orange
         case .disk: return .cyan
+        case .power: return .yellow
         }
     }
 }
