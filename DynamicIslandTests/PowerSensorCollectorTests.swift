@@ -38,6 +38,26 @@ final class PowerSensorCollectorTests: XCTestCase {
         XCTAssertEqual(PowerSensorCollector.wattsFromEnergyDelta(milliJoules: 5000, seconds: -1), 0)
     }
 
+    // MARK: - Unit-aware energy conversion
+
+    func test_joules_scalesByUnitLabel() {
+        XCTAssertEqual(PowerSensorCollector.joules(fromRaw: 5000, unit: "mJ"), 5.0, accuracy: 1e-9)
+        XCTAssertEqual(PowerSensorCollector.joules(fromRaw: 5_000_000, unit: "uJ"), 5.0, accuracy: 1e-9)
+        XCTAssertEqual(PowerSensorCollector.joules(fromRaw: 5_000_000, unit: "µJ"), 5.0, accuracy: 1e-9)
+        XCTAssertEqual(PowerSensorCollector.joules(fromRaw: 5_000_000_000, unit: "nJ"), 5.0, accuracy: 1e-6)
+        XCTAssertEqual(PowerSensorCollector.joules(fromRaw: 5, unit: "J"), 5.0, accuracy: 1e-9)
+        // Unlabeled defaults to millijoules.
+        XCTAssertEqual(PowerSensorCollector.joules(fromRaw: 5000, unit: ""), 5.0, accuracy: 1e-9)
+    }
+
+    func test_watts_fromRaw_scalesUnitThenDividesByTime() {
+        // 10,000,000 nJ over 1 s = 0.01 J/s = 0.01 W — the nJ-vs-mJ bug would report 10,000 W.
+        XCTAssertEqual(PowerSensorCollector.watts(fromRaw: 10_000_000, unit: "nJ", seconds: 1), 0.01, accuracy: 1e-6)
+        // 20,000 mJ over 2 s = 10 W
+        XCTAssertEqual(PowerSensorCollector.watts(fromRaw: 20_000, unit: "mJ", seconds: 2), 10.0, accuracy: 1e-6)
+        XCTAssertEqual(PowerSensorCollector.watts(fromRaw: 5000, unit: "mJ", seconds: 0), 0)
+    }
+
     // MARK: - Battery voltage × amperage
 
     func test_batteryWatts_dischargeIsNegative_chargeIsPositive() {
@@ -62,33 +82,34 @@ final class PowerSensorCollectorTests: XCTestCase {
 
     // MARK: - Headline resolution order
 
-    func test_resolve_prefersSoCWhenAvailable() {
-        let (watts, source) = PowerSensorCollector.resolveSystemWatts(soc: 18.5, smc: 30, batteryDischarge: 40)
+    func test_resolve_prefersSMCSystemTotal() {
+        // SMC "System Total" is the truest whole-machine figure — it wins over the partial SoC sum.
+        let (watts, source) = PowerSensorCollector.resolveSystemWatts(smcSystem: 30, socSum: 18.5, batteryDischarge: 40)
+        XCTAssertEqual(watts, 30, accuracy: 0.0001)
+        XCTAssertEqual(source, .smc)
+    }
+
+    func test_resolve_fallsBackToSoCSumWhenNoSMC() {
+        let (watts, source) = PowerSensorCollector.resolveSystemWatts(smcSystem: nil, socSum: 18.5, batteryDischarge: 40)
         XCTAssertEqual(watts, 18.5, accuracy: 0.0001)
         XCTAssertEqual(source, .ioReport)
     }
 
-    func test_resolve_fallsBackToSMCWhenNoSoC() {
-        let (watts, source) = PowerSensorCollector.resolveSystemWatts(soc: nil, smc: 22, batteryDischarge: 40)
-        XCTAssertEqual(watts, 22, accuracy: 0.0001)
-        XCTAssertEqual(source, .smc)
-    }
-
     func test_resolve_fallsBackToBatteryDischargeLast() {
-        let (watts, source) = PowerSensorCollector.resolveSystemWatts(soc: nil, smc: nil, batteryDischarge: 40)
+        let (watts, source) = PowerSensorCollector.resolveSystemWatts(smcSystem: nil, socSum: nil, batteryDischarge: 40)
         XCTAssertEqual(watts, 40, accuracy: 0.0001)
         XCTAssertEqual(source, .batteryFlow)
     }
 
-    func test_resolve_treatsZeroSoCAsNotAvailable() {
-        // First sample (no delta) yields 0 W SoC — must fall through, not report 0 from IOReport.
-        let (watts, source) = PowerSensorCollector.resolveSystemWatts(soc: 0, smc: nil, batteryDischarge: 12)
+    func test_resolve_treatsZeroAsNotAvailable() {
+        // First sample (no delta) yields 0 W — must fall through, not report 0.
+        let (watts, source) = PowerSensorCollector.resolveSystemWatts(smcSystem: 0, socSum: 0, batteryDischarge: 12)
         XCTAssertEqual(watts, 12, accuracy: 0.0001)
         XCTAssertEqual(source, .batteryFlow)
     }
 
     func test_resolve_unavailableWhenNothingPresent() {
-        let (watts, source) = PowerSensorCollector.resolveSystemWatts(soc: nil, smc: nil, batteryDischarge: nil)
+        let (watts, source) = PowerSensorCollector.resolveSystemWatts(smcSystem: nil, socSum: nil, batteryDischarge: nil)
         XCTAssertEqual(watts, 0)
         XCTAssertEqual(source, .unavailable)
     }

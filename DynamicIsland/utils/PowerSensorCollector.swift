@@ -36,6 +36,7 @@ struct PowerMetrics: Equatable {
     let gpuWatts: Double?
     let aneWatts: Double?
     let dramWatts: Double?
+    let displayWatts: Double?       // internal display ("DISP"); external is excluded
     let batteryWatts: Double?       // magnitude of battery flow (always >= 0)
     let isCharging: Bool
     let isOnAC: Bool
@@ -45,7 +46,7 @@ struct PowerMetrics: Equatable {
 
     static let zero = PowerMetrics(
         systemWatts: 0, cpuWatts: nil, gpuWatts: nil, aneWatts: nil, dramWatts: nil,
-        batteryWatts: nil, isCharging: false, isOnAC: false,
+        displayWatts: nil, batteryWatts: nil, isCharging: false, isOnAC: false,
         adapterWatts: nil, adapterRatedWatts: nil, source: .unavailable
     )
 }
@@ -59,13 +60,12 @@ final class PowerSensorCollector {
     private let hardware = AppleHardwareInfo.shared
     private var channels: CFMutableDictionary?
     private var subscription: IOReportSubscriptionRef?
-    private var previousSample: (samples: CFDictionary, time: TimeInterval)?
-
-    /// Aggregate channel names in the "Energy Model" group (per `ioreg`/powermetrics).
-    private let cpuEnergyChannel = "CPU Energy"
-    private let gpuEnergyChannel = "GPU Energy"
-    private let aneEnergyChannel = "ANE Energy"
-    private let dramEnergyChannel = "DRAM Energy"
+    /// Per-component cumulative energy (joules) and timestamp from the previous sample. Power is
+    /// the difference of these monotonic counters over elapsed time — the approach used by Stats.
+    /// We deliberately do NOT use IOReportCreateSamplesDelta: on some chips (e.g. M5) it returns
+    /// 0 for the CPU channels, while reading the raw cumulative counter and diffing it works.
+    private var previousEnergy: [String: Double]?
+    private var previousEnergyTime: TimeInterval?
 
     init() {
         setupEnergyChannels()
@@ -83,24 +83,35 @@ final class PowerSensorCollector {
         let battery = readBattery()
         let components = readComponentWatts()
 
-        let socWatts = components.total
-        let smcWatts = readSMCSystemPower()
+        // Component power: prefer IOReport "Energy Model"; fall back to SMC keys (as Stats does)
+        // for whatever that group doesn't expose on a given chip (CPU is 0 in Energy Model here).
+        let cpu = positive(components.cpu) ?? readSMC(Self.cpuPowerKeys)
+        let gpu = positive(components.gpu) ?? readSMC(Self.gpuPowerKeys)
+        let ane = positive(components.ane)
+        let dram = positive(components.dram) ?? readSMC(Self.dramPowerKeys)
+        let display = positive(components.display)
+
+        // Headline: true system total from SMC "PSTR" if present, else the sum of components,
+        // else battery discharge (on battery), else unavailable.
+        let smcSystem = readSMC(Self.systemPowerKeys)
+        let socSum = sumPositive([cpu, gpu, ane, dram])
         let batteryDischarge = (battery.isOnAC || battery.batteryWatts == nil)
             ? nil
             : battery.batteryWatts.map(abs)
 
         let (systemWatts, source) = Self.resolveSystemWatts(
-            soc: socWatts,
-            smc: smcWatts,
+            smcSystem: smcSystem,
+            socSum: socSum,
             batteryDischarge: batteryDischarge
         )
 
         return PowerMetrics(
             systemWatts: systemWatts,
-            cpuWatts: components.cpu,
-            gpuWatts: components.gpu,
-            aneWatts: components.ane,
-            dramWatts: components.dram,
+            cpuWatts: cpu,
+            gpuWatts: gpu,
+            aneWatts: ane,
+            dramWatts: dram,
+            displayWatts: display,
             batteryWatts: battery.batteryWatts.map(abs),
             isCharging: battery.isCharging,
             isOnAC: battery.isOnAC,
@@ -108,6 +119,16 @@ final class PowerSensorCollector {
             adapterRatedWatts: battery.adapterRatedWatts,
             source: source
         )
+    }
+
+    private func positive(_ value: Double?) -> Double? {
+        guard let value, value > 0 else { return nil }
+        return value
+    }
+
+    private func sumPositive(_ values: [Double?]) -> Double? {
+        let parts = values.compactMap { $0 }.filter { $0 > 0 }
+        return parts.isEmpty ? nil : parts.reduce(0, +)
     }
 
     // MARK: - Pure helpers (unit-tested)
@@ -118,17 +139,36 @@ final class PowerSensorCollector {
         return (milliJoules / 1000.0) / seconds // mJ -> J, then J/s = W
     }
 
+    /// Convert a raw IOReport energy value to joules using its unit label. IOReport channels
+    /// report energy in different units per channel (mJ, µJ, nJ); assuming one unit for all
+    /// of them inflates or deflates the result by orders of magnitude.
+    static func joules(fromRaw raw: Double, unit: String) -> Double {
+        switch unit.lowercased() {
+        case "mj": return raw / 1_000
+        case "uj", "µj": return raw / 1_000_000
+        case "nj": return raw / 1_000_000_000
+        case "j": return raw
+        default: return raw / 1_000 // assume millijoules when unlabeled
+        }
+    }
+
+    /// Average watts from a raw energy delta in `unit` over `seconds`.
+    static func watts(fromRaw raw: Double, unit: String, seconds: Double) -> Double {
+        guard seconds > 0 else { return 0 }
+        return joules(fromRaw: raw, unit: unit) / seconds
+    }
+
     /// Battery power from voltage (mV) and signed amperage (mA). Sign is preserved.
     static func batteryWatts(voltageMilliVolts: Double, amperageMilliAmps: Double) -> Double {
         (voltageMilliVolts / 1000.0) * (amperageMilliAmps / 1000.0)
     }
 
-    /// Headline resolution order: SoC package power (Apple Silicon) → SMC total (Intel) →
-    /// battery discharge → unavailable. A SoC/SMC reading of exactly 0 is treated as "not
-    /// yet available" so the first sample (no delta) falls through to the next source.
-    static func resolveSystemWatts(soc: Double?, smc: Double?, batteryDischarge: Double?) -> (Double, PowerSource) {
-        if let soc, soc > 0 { return (soc, .ioReport) }
-        if let smc, smc > 0 { return (smc, .smc) }
+    /// Headline resolution order: SMC "System Total" (the truest whole-machine figure, like
+    /// Stats' `PSTR`) → sum of per-component package power → battery discharge → unavailable.
+    /// A reading of exactly 0 is treated as "not available" so empty sources fall through.
+    static func resolveSystemWatts(smcSystem: Double?, socSum: Double?, batteryDischarge: Double?) -> (Double, PowerSource) {
+        if let smcSystem, smcSystem > 0 { return (smcSystem, .smc) }
+        if let socSum, socSum > 0 { return (socSum, .ioReport) }
         if let batteryDischarge, batteryDischarge > 0 { return (batteryDischarge, .batteryFlow) }
         return (0, .unavailable)
     }
@@ -169,13 +209,22 @@ final class PowerSensorCollector {
         return reading
     }
 
-    // MARK: - SMC (Intel fallback)
+    // MARK: - SMC power keys (per exelban/Stats Modules/Sensors/values.swift)
 
-    private func readSMCSystemPower() -> Double? {
-        guard hardware.platform == .intel else { return nil }
-        // PSTR = system total power (watts) on Intel SMC.
-        if let value = SMC.shared.getValue("PSTR"), value > 0, value < 1000 {
-            return value
+    /// Whole-machine power. `PSTR` ("System Total") is the headline figure when present.
+    static let systemPowerKeys = ["PSTR", "PMTR"]
+    /// CPU package power. Tried in order; first sane reading wins.
+    static let cpuPowerKeys = ["PCPC", "PCTR", "PCPT", "PCPR", "PC0C", "PCAM"]
+    /// GPU power (used only if IOReport "GPU Energy" is unavailable on this chip).
+    static let gpuPowerKeys = ["PG0R", "PG0C", "PGTR"]
+    static let dramPowerKeys = ["PC3C", "PMTR"]
+
+    /// First SMC key in `keys` that returns a finite, plausible wattage (0 < w < 1000).
+    private func readSMC(_ keys: [String]) -> Double? {
+        for key in keys {
+            if let value = SMC.shared.getValue(key), value.isFinite, value > 0, value < 1000 {
+                return value
+            }
         }
         return nil
     }
@@ -187,63 +236,70 @@ final class PowerSensorCollector {
         var gpu: Double?
         var ane: Double?
         var dram: Double?
+        var display: Double?
         /// Sum of whatever components were available; `nil` when none were read (no delta yet).
         var total: Double? {
-            let parts = [cpu, gpu, ane, dram].compactMap { $0 }
+            let parts = [cpu, gpu, ane, dram, display].compactMap { $0 }
             return parts.isEmpty ? nil : parts.reduce(0, +)
         }
     }
 
     private func readComponentWatts() -> ComponentWatts {
-        guard let channels, let subscription else { return ComponentWatts() }
+        guard let subscription, let channels else { return ComponentWatts() }
         let now = Date().timeIntervalSince1970
-        guard let currentSample = IOReportCreateSamples(subscription, channels, nil)?.takeRetainedValue() else {
+        guard let sample = IOReportCreateSamples(subscription, channels, nil)?.takeRetainedValue() else {
             return ComponentWatts()
         }
-        defer { previousSample = (currentSample, now) }
-        guard let previous = previousSample,
-              let diff = IOReportCreateSamplesDelta(previous.samples, currentSample, nil)?.takeRetainedValue() else {
+
+        // Read the CUMULATIVE energy counter (joules) per component bucket and diff successive
+        // reads ourselves — Stats' method. (IOReportCreateSamplesDelta zeroes CPU on some chips.)
+        // CPU prefers the "CPU Energy" aggregate, else per-cluster "ECPU"/"PCPU". Internal
+        // display is "DISP" (external "DISPEXT" is excluded).
+        let samples = iterateChannels(sample)
+        var energy: [String: Double] = [:]
+        for s in samples {
+            guard s.group == "Energy Model" else { continue } // the merged subscription also carries CPU/GPU stats
+            let name = s.name
+            let joules = Self.joules(fromRaw: s.value, unit: s.unit)
+            if name.hasSuffix("CPU Energy") { energy["cpu", default: 0] += joules }
+            else if name.hasSuffix("GPU Energy") { energy["gpu", default: 0] += joules }
+            else if name.hasPrefix("ANE") { energy["ane", default: 0] += joules }
+            else if name.hasPrefix("DRAM") { energy["dram", default: 0] += joules }
+            else if name.hasPrefix("DISPEXT") { /* external display, not the laptop screen */ }
+            else if name.hasPrefix("DISP") { energy["display", default: 0] += joules }
+            else if name == "ECPU" || name == "PCPU" { energy["cpuCluster", default: 0] += joules }
+        }
+
+        defer { previousEnergy = energy; previousEnergyTime = now }
+        guard let prev = previousEnergy, let prevTime = previousEnergyTime else {
             return ComponentWatts() // first sample: establish a baseline, no power yet
         }
-        let elapsed = now - previous.time
-        guard elapsed > 0 else { return ComponentWatts() }
+        let elapsed = now - prevTime
+        // Discard out-of-range windows: a tiny interval divides by ~0; a huge one means
+        // monitoring was paused. The defer re-baselines either way, so the next tick recovers.
+        guard elapsed >= 0.2, elapsed <= 10 else { return ComponentWatts() }
 
-        // Sum energy (mJ) per aggregate channel, with a per-cluster fallback for CPU.
-        var energy: [String: Double] = [:]
-        var eCpuFallback = 0.0
-        var pCpuFallback = 0.0
-        for sample in iterateChannels(diff) {
-            switch sample.name {
-            case cpuEnergyChannel, gpuEnergyChannel, aneEnergyChannel, dramEnergyChannel:
-                energy[sample.name, default: 0] += sample.value
-            case "ECPU":
-                eCpuFallback += sample.value
-            case "PCPU":
-                pCpuFallback += sample.value
-            default:
-                break
-            }
-        }
-
+        // Power = Δ(cumulative joules) / elapsed. A 0 reading → nil so the SMC fallback applies.
         func watts(_ key: String) -> Double? {
-            guard let mJ = energy[key] else { return nil }
-            return Self.wattsFromEnergyDelta(milliJoules: mJ, seconds: elapsed)
+            guard let cur = energy[key], let p = prev[key] else { return nil }
+            let w = (cur - p) / elapsed
+            return w > 0 ? w : nil
         }
 
         var result = ComponentWatts()
-        result.cpu = watts(cpuEnergyChannel)
-            ?? ((eCpuFallback + pCpuFallback) > 0
-                ? Self.wattsFromEnergyDelta(milliJoules: eCpuFallback + pCpuFallback, seconds: elapsed)
-                : nil)
-        result.gpu = watts(gpuEnergyChannel)
-        result.ane = watts(aneEnergyChannel)
-        result.dram = watts(dramEnergyChannel)
+        result.cpu = watts("cpu") ?? watts("cpuCluster")
+        result.gpu = watts("gpu")
+        result.ane = watts("ane")
+        result.dram = watts("dram")
+        result.display = watts("display")
         return result
     }
 
     private struct EnergySample {
+        let group: String
         let name: String
-        let value: Double // millijoules accumulated in the delta window
+        let unit: String
+        let value: Double // raw cumulative energy counter in `unit` (since boot)
     }
 
     private func iterateChannels(_ data: CFDictionary) -> [EnergySample] {
@@ -258,9 +314,11 @@ final class PowerSensorCollector {
         for index in 0..<CFArrayGetCount(array) {
             let element = CFArrayGetValueAtIndex(array, index)
             let entry = unsafeBitCast(element, to: CFDictionary.self)
+            let group = IOReportChannelGetGroup(entry)?.takeUnretainedValue() as String? ?? ""
             let name = IOReportChannelGetChannelName(entry)?.takeUnretainedValue() as String? ?? ""
+            let unit = IOReportChannelGetUnitLabel(entry)?.takeUnretainedValue() as String? ?? ""
             let value = Double(IOReportSimpleGetIntegerValue(entry, 0))
-            result.append(EnergySample(name: name, value: value))
+            result.append(EnergySample(group: group, name: name, unit: unit.trimmingCharacters(in: .whitespaces), value: value))
         }
         return result
     }
@@ -270,13 +328,11 @@ final class PowerSensorCollector {
             Log.debug("PowerSensorCollector: no Energy Model channels (Intel or unsupported)", .performance)
             return
         }
-        guard let copy = CFDictionaryCreateMutableCopy(kCFAllocatorDefault, CFDictionaryGetCount(channel), channel) else {
-            return
-        }
+        guard let copy = CFDictionaryCreateMutableCopy(kCFAllocatorDefault, 0, channel) else { return }
         channels = copy
-        var dictionary: Unmanaged<CFMutableDictionary>?
-        subscription = IOReportCreateSubscription(nil, copy, &dictionary, 0, nil)
-        dictionary?.release()
+        var subscribed: Unmanaged<CFMutableDictionary>?
+        subscription = IOReportCreateSubscription(nil, copy, &subscribed, 0, nil)
+        subscribed?.release()
     }
 
     // MARK: - IORegistry value coercion

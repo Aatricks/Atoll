@@ -39,10 +39,6 @@ struct PowerStatsDetailView: View {
                     )
                 }
 
-                StatsCard(title: String(localized: "Components"), padding: 16, background: cardBackground, cornerRadius: 12) {
-                    PowerComponentsCard(metrics: metrics, accent: accent)
-                }
-
                 StatsCard(title: String(localized: "Battery & Adapter"), padding: 16, background: cardBackground, cornerRadius: 12) {
                     PowerBatteryCard(metrics: metrics, accent: accent)
                 }
@@ -82,34 +78,6 @@ private struct SystemPowerOverview: View {
     }
 }
 
-private struct PowerComponentsCard: View {
-    let metrics: PowerMetrics
-    let accent: Color
-
-    private var rows: [(label: String, watts: Double)] {
-        var result: [(String, Double)] = []
-        if let cpu = metrics.cpuWatts { result.append((String(localized: "CPU"), cpu)) }
-        if let gpu = metrics.gpuWatts { result.append((String(localized: "GPU"), gpu)) }
-        if let ane = metrics.aneWatts { result.append((String(localized: "Neural Engine"), ane)) }
-        if let dram = metrics.dramWatts { result.append((String(localized: "Memory"), dram)) }
-        return result
-    }
-
-    var body: some View {
-        if rows.isEmpty {
-            Text("Per-component power is only available on Apple Silicon.")
-                .font(.footnote)
-                .foregroundColor(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        } else {
-            VStack(spacing: 10) {
-                ForEach(rows, id: \.label) { row in
-                    DetailRow(color: accent.opacity(0.7), label: row.label, value: StatsFormatting.watts(row.watts))
-                }
-            }
-        }
-    }
-}
 
 private struct PowerBatteryCard: View {
     let metrics: PowerMetrics
