@@ -358,6 +358,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.orderFrontRegardless()
         NotchSpaceManager.shared.notchSpace.windows.insert(window)
         //SkyLightOperator.shared.delegateWindow(window)
+
+        viewModel.$hideOnClosed
+            .receive(on: RunLoop.main)
+            .sink { [weak self, weak window, weak screen] hide in
+                guard let self = self, let window = window, let screen = screen else { return }
+                if hide {
+                    window.orderOut(nil)
+                } else {
+                    if !window.isVisible {
+                        window.orderFrontRegardless()
+                        self.positionWindow(window, on: screen)
+                    }
+                }
+            }
+            .store(in: &viewModel.cancellables)
+
         return window
     }
 
