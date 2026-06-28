@@ -363,11 +363,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .receive(on: RunLoop.main)
             .sink { [weak self, weak window, weak screen] hide in
                 guard let self = self, let window = window, let screen = screen else { return }
+                Log.debug("[fullscreen-hide] hide=\(hide) wasVisible=\(window.isVisible)", .ui)
                 if hide {
                     window.orderOut(nil)
                 } else {
                     if !window.isVisible {
                         window.orderFrontRegardless()
+                        // orderOut can drop the panel from the notch SkyLight space;
+                        // re-register so it returns at the correct level (insert is idempotent).
+                        NotchSpaceManager.shared.notchSpace.windows.insert(window)
                         self.positionWindow(window, on: screen)
                     }
                 }

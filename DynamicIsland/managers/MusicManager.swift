@@ -784,6 +784,7 @@ class MusicManager: ObservableObject {
     // MARK: - Update Methods
     @MainActor
     private func updateFromPlaybackState(_ state: PlaybackState) {
+        Log.debug("[playback-event] rawIsPlaying=\(state.isPlaying) prevIsPlaying=\(self.isPlaying) title=\(state.title) artist=\(state.artist) bundle=\(String(describing: state.bundleIdentifier))", .ui)
         // Check for playback state changes (playing/paused)
         let eventIsPlaying = state.isPlaying
         let expectedState = pendingOptimisticPlayState

@@ -334,6 +334,18 @@ struct ContentView: View {
             && !isMusicHUDDeferredAfterUnlock
     }
 
+    /// Diagnostic snapshot of every term that decides whether the closed-notch music
+    /// live activity is shown. Body compiles out of Release (Log.debug is a no-op there).
+    private func logClosedMusicGate(_ context: String) {
+        #if DEBUG
+        let hasMusicMetadata = !musicManager.songTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !musicManager.artistName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasActiveMusicSnapshot = musicManager.isPlaying || (!musicManager.isPlayerIdle && hasMusicMetadata)
+        let pairing = closedMusicPairingEligible(hasActiveMusicSnapshot: hasActiveMusicSnapshot)
+        Log.debug("[closed-music-gate] ctx=\(context) notch=\(vm.notchState) isPlaying=\(musicManager.isPlaying) isPlayerIdle=\(musicManager.isPlayerIdle) hasMeta=\(hasMusicMetadata) snapshot=\(hasActiveMusicSnapshot) liveActivityEnabled=\(coordinator.musicLiveActivityEnabled) closedContentEnabled=\(closedMusicContentEnabled) hideOnClosed=\(vm.hideOnClosed) locked=\(lockScreenManager.isLocked) hudDeferred=\(isMusicHUDDeferredAfterUnlock) expansionVisible=\(isCurrentScreenExpansionVisible) expansionType=\(String(describing: currentScreenExpansionType)) pairingEligible=\(pairing) bundleID=\(String(describing: musicManager.bundleIdentifier))", .ui)
+        #endif
+    }
+
     private var closedLiveActivitySwapTransition: AnyTransition {
         .asymmetric(
             insertion: .opacity
@@ -796,6 +808,7 @@ struct ContentView: View {
                 }
             }
             .onChange(of: vm.hideOnClosed) { _, hidden in
+                logClosedMusicGate("hideOnClosed=\(hidden)")
                 if hidden {
                     cancelMusicControlWindowSync()
                     hideMusicControlWindow()
@@ -844,10 +857,15 @@ struct ContentView: View {
                 }
             }
             .onChange(of: musicManager.isPlaying) { _, isPlaying in
+                logClosedMusicGate("isPlaying=\(isPlaying)")
                 handleMusicControlPlaybackChange(isPlaying: isPlaying)
             }
             .onChange(of: musicManager.isPlayerIdle) { _, isIdle in
+                logClosedMusicGate("isPlayerIdle=\(isIdle)")
                 handleMusicControlIdleChange(isIdle: isIdle)
+            }
+            .onChange(of: coordinator.expandingView.show) { _, show in
+                logClosedMusicGate("expandingView.show=\(show)")
             }
             .onChange(of: vm.closedNotchSize) { _, _ in
                 if shouldShowMusicControlWindow() {
