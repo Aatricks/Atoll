@@ -83,13 +83,40 @@ class FullscreenMediaDetector: ObservableObject {
         let names = NSScreen.screens.map { $0.localizedName }
         var newStatus: [String: Bool] = [:]
         for name in names {
-            newStatus[name] = apps.contains { $0.screen.localizedName == name && $0.bundleIdentifier != "com.apple.finder" && ($0.bundleIdentifier == musicManager.bundleIdentifier || Defaults[.hideNotchOption] == .always) }
+            newStatus[name] = apps.contains { app in
+                guard app.screen.localizedName == name,
+                      app.bundleIdentifier != "com.apple.finder" else { return false }
+                switch Defaults[.hideNotchOption] {
+                case .always:         return true
+                case .nowPlayingOnly: return app.bundleIdentifier == musicManager.bundleIdentifier
+                case .gamesOnly:      return self.isGame(app)
+                case .never:          return false
+                }
+            }
         }
 
         if newStatus != fullscreenStatus {
             fullscreenStatus = newStatus
             Log.debug("✅ Fullscreen status: \(newStatus)")
         }
+    }
+
+    /// Heuristic "is this fullscreen app a game". macOS Game Mode has no public API
+    /// to query another process, so we use: declared games category OR a known
+    /// game-launcher install path (covers Steam titles like Hades 2 that ship with
+    /// no LSApplicationCategoryType).
+    private func isGame(_ info: MacroVisionKit.FullscreenWindowInfo) -> Bool {
+        guard let url = info.application.bundleURL else { return false }
+
+        let category = Bundle(url: url)?
+            .object(forInfoDictionaryKey: "LSApplicationCategoryType") as? String
+        let path = url.path
+        let launcherMarkers = ["/steamapps/common/", "/Epic Games/", "/GOG Games/"]
+        let isGame = category == "public.app-category.games"
+            || launcherMarkers.contains(where: { path.contains($0) })
+
+        Log.debug("[fullscreen-hide] isGame=\(isGame) bundle=\(info.bundleIdentifier ?? "nil") category=\(category ?? "none") path=\(path)")
+        return isGame
     }
 
     private func cleanupNotificationObservers() {

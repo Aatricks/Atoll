@@ -391,6 +391,7 @@ enum ThirdPartyDDCProvider: String, CaseIterable, Codable, Defaults.Serializable
 enum HideNotchOption: String, Defaults.Serializable {
     case always
     case nowPlayingOnly
+    case gamesOnly
     case never
 }
 
@@ -1053,7 +1054,7 @@ extension Defaults.Keys {
         // MARK: Fullscreen Media Detection
     static let alwaysHideInFullscreen = Key<Bool>("alwaysHideInFullscreen", default: false)
     
-    static let hideNotchOption = Key<HideNotchOption>("hideNotchOption", default: .nowPlayingOnly)
+    static let hideNotchOption = Key<HideNotchOption>("hideNotchOption", default: .gamesOnly)
     
     // MARK: Wobble Animation
     static let enableWobbleAnimation = Key<Bool>("enableWobbleAnimation", default: false)

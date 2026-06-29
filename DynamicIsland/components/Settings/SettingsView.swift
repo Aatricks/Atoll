@@ -3072,6 +3072,7 @@ struct Media: View {
             }) {
                 Text("Always hide in fullscreen").tag(HideNotchOption.always)
                 Text("Hide only when NowPlaying app is in fullscreen").tag(HideNotchOption.nowPlayingOnly)
+                Text("Hide only for games").tag(HideNotchOption.gamesOnly)
                 Text("Never hide").tag(HideNotchOption.never)
             }
             .onChange(of: hideNotchOption) {
