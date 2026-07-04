@@ -24,6 +24,7 @@ import Defaults
 import MacroVisionKit
 import SwiftUI
 
+@MainActor
 class FullscreenMediaDetector: ObservableObject {
     static let shared = FullscreenMediaDetector()
     private let detector: MacroVisionKit

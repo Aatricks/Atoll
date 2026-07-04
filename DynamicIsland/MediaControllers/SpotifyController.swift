@@ -24,6 +24,7 @@ import Combine
 import Foundation
 import SwiftUI
 
+@MainActor
 class SpotifyController: MediaControllerProtocol, SpotifyDesktopControlling {
     static let bundleIdentifier = "com.spotify.client"
     static let sharedForLaunch = SpotifyController()
