@@ -133,6 +133,29 @@ final class LocalSendService: NSObject, ObservableObject {
         }
     }
 
+    /// Tear down discovery so the periodic multicast beacons, cleanup loop, UDP
+    /// group and TCP listener don't run for the app's lifetime once the shelf UI
+    /// is dismissed. startDiscovery() re-establishes everything on next appear.
+    /// Note: while stopped the device is not discoverable and won't accept
+    /// incoming LocalSend transfers until the shelf UI is shown again.
+    func stopDiscovery() {
+        guard isStarted else { return }
+        isStarted = false
+
+        announceTask?.cancel()
+        announceTask = nil
+        cleanupTask?.cancel()
+        cleanupTask = nil
+        activeRefreshTask?.cancel()
+        activeRefreshTask = nil
+
+        connectionGroup?.cancel()
+        connectionGroup = nil
+
+        registerListener?.cancel()
+        registerListener = nil
+    }
+
     func refreshDeviceScan() {
         activeRefreshTask?.cancel()
         startDiscovery()

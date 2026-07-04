@@ -1692,12 +1692,15 @@ class MusicManager: ObservableObject {
             while !Task.isCancelled {
                 // Compute estimated playback position and update lyric
                 let position = self.estimatedPlaybackPosition()
-                await MainActor.run {
+                let playing = await MainActor.run { () -> Bool in
                     self.updateCurrentLyric(for: position)
+                    return self.isPlaying
                 }
 
-                // Sleep ~300ms between updates
-                try? await Task.sleep(nanoseconds: 300_000_000)
+                // ~300ms while playing; back off to 1s while paused since the
+                // position is static (still tick to catch seek-while-paused).
+                let interval: UInt64 = playing ? 300_000_000 : 1_000_000_000
+                try? await Task.sleep(nanoseconds: interval)
             }
         }
     }

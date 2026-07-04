@@ -201,11 +201,14 @@ class ScreenRecordingManager: ObservableObject {
         recordingStartTime = Date()
         recordingDuration = 0
         
-        durationTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+        // 1 Hz is enough: formattedDuration is mm:ss (integer seconds) and the
+        // value is recomputed from the start Date on each tick.
+        durationTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.updateDuration()
             }
         }
+        durationTimer?.tolerance = 0.2
         
         Log.debug("ScreenRecordingManager: ⏱️ Started duration tracking")
     }

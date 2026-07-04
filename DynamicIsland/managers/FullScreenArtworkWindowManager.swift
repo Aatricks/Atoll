@@ -475,29 +475,50 @@ final class FullScreenArtworkWindowManager: ObservableObject {
         }
     }
 
+    // killall spawns block via waitUntilExit(); run them off the main thread so
+    // toggling play/pause with a live wallpaper doesn't stall the UI. Serial so
+    // interleaved STOP/CONT signals stay ordered.
+    private let wallpaperSignalQueue = DispatchQueue(label: "com.atoll.wallpaperSignal", qos: .userInitiated)
+
     private func suspendWallpaperAgent() {
         guard !hasSuspendedWallpaperAgent else { return }
-        var anySucceeded = false
-        for name in Self.wallpaperRenderProcessNames {
-            if signalProcess(name: name, signalFlag: "-STOP") {
-                anySucceeded = true
+        hasSuspendedWallpaperAgent = true
+        let names = Self.wallpaperRenderProcessNames
+        wallpaperSignalQueue.async { [weak self] in
+            var anySucceeded = false
+            for name in names {
+                if Self.signalProcess(name: name, signalFlag: "-STOP") {
+                    anySucceeded = true
+                }
+            }
+            Log.debug("[FullScreenArtworkWindowManager] SIGSTOP wallpaper processes -> anySucceeded=\(anySucceeded)")
+            if !anySucceeded {
+                DispatchQueue.main.async { self?.hasSuspendedWallpaperAgent = false }
             }
         }
-        hasSuspendedWallpaperAgent = anySucceeded
-        Log.debug("[FullScreenArtworkWindowManager] SIGSTOP wallpaper processes -> anySucceeded=\(anySucceeded)")
     }
 
-    private func resumeWallpaperAgentIfNeeded() {
+    private func resumeWallpaperAgentIfNeeded(synchronously: Bool = false) {
         guard hasSuspendedWallpaperAgent else { return }
-        for name in Self.wallpaperRenderProcessNames {
-            _ = signalProcess(name: name, signalFlag: "-CONT")
-        }
         hasSuspendedWallpaperAgent = false
-        Log.debug("[FullScreenArtworkWindowManager] SIGCONT wallpaper processes")
+        let names = Self.wallpaperRenderProcessNames
+        let work = {
+            for name in names {
+                _ = Self.signalProcess(name: name, signalFlag: "-CONT")
+            }
+            Log.debug("[FullScreenArtworkWindowManager] SIGCONT wallpaper processes")
+        }
+        // On app termination the -CONT must finish before we exit, or the
+        // wallpaper agent stays frozen after Atoll quits.
+        if synchronously {
+            work()
+        } else {
+            wallpaperSignalQueue.async(execute: work)
+        }
     }
 
     @discardableResult
-    private func signalProcess(name: String, signalFlag: String) -> Bool {
+    private static func signalProcess(name: String, signalFlag: String) -> Bool {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
         task.arguments = [signalFlag, name]
@@ -519,7 +540,7 @@ final class FullScreenArtworkWindowManager: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.resumeWallpaperAgentIfNeeded()
+            self?.resumeWallpaperAgentIfNeeded(synchronously: true)
         }
     }
 

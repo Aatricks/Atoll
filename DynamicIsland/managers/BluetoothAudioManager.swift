@@ -1072,7 +1072,9 @@ class BluetoothAudioManager: ObservableObject {
         if Thread.isMainThread {
             applyUpdates()
         } else {
-            DispatchQueue.main.sync(execute: applyUpdates)
+            // async, not sync: the caller is a utility worker and doesn't need to
+            // block on the main thread (the closure captures its values by copy).
+            DispatchQueue.main.async(execute: applyUpdates)
         }
     }
 

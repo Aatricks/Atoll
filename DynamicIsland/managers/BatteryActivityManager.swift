@@ -97,13 +97,18 @@ class BatteryActivityManager {
             return
         }
         batterySource = powerSource
-        CFRunLoopAddSource(CFRunLoopGetCurrent(), powerSource, .defaultMode)
+        // Pin to the main run loop, not CFRunLoopGetCurrent(): this is a
+        // `static let shared` whose init runs on whatever thread first touches
+        // it. Binding to main guarantees the source's run loop actually runs and
+        // that notifyBatteryChanges() fires on main, so the notification queue is
+        // mutated from a single thread (no data race with the main.asyncAfter drain).
+        CFRunLoopAddSource(CFRunLoopGetMain(), powerSource, .defaultMode)
     }
 
     /// Stops monitoring battery changes
     private func stopMonitoring() {
         if let powerSource = batterySource {
-            CFRunLoopRemoveSource(CFRunLoopGetCurrent(), powerSource, .defaultMode)
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), powerSource, .defaultMode)
             batterySource = nil
         }
     }
@@ -202,7 +207,9 @@ class BatteryActivityManager {
         isProcessingNotifications = true
         
         let event = notificationQueue.removeFirst()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+        // Small spacing to serialize bursts without the multi-second lag the old
+        // 1.0s delay caused (6 first-run events took ~6s to reach observers).
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
             guard let self = self else { return }
             self.notifyObservers(event: event)
             self.isProcessingNotifications = false

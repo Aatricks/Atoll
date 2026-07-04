@@ -23,7 +23,10 @@ class ClipboardWindowManager: ObservableObject {
     static let shared = ClipboardWindowManager()
     
     private var clipboardWindow: NSWindow?
-    
+    // NSWindow.delegate is a weak reference; retain it here so the inline
+    // WindowDelegate isn't deallocated immediately and windowShouldClose fires.
+    private var windowDelegate: WindowDelegate?
+
     private init() {}
     
     func showClipboardWindow() {
@@ -71,10 +74,13 @@ class ClipboardWindowManager: ObservableObject {
         window.contentView = hostingView
         
         // Handle window closing
-        window.delegate = WindowDelegate { [weak self] window in
+        let delegate = WindowDelegate { [weak self] window in
             ScreenCaptureVisibilityManager.shared.unregister(window)
             self?.clipboardWindow = nil
+            self?.windowDelegate = nil
         }
+        self.windowDelegate = delegate
+        window.delegate = delegate
 
         ScreenCaptureVisibilityManager.shared.register(window, scope: .panelsOnly)
         

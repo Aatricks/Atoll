@@ -422,7 +422,17 @@ class ScreenAssistantManager: NSObject, ObservableObject {
             return
         }
         
-        performAPIRequest(url: url, requestBody: buildGeminiRequestBody(message: message, files: files), provider: .gemini)
+        // Build the request body (large file reads + base64) off the main thread
+        // so attaching a video/large PDF doesn't freeze the UI. chatMessages is a
+        // @Published main-state value, so snapshot it here before hopping off-main.
+        let history = chatMessages
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self else { return }
+            let requestBody = self.buildGeminiRequestBody(message: message, files: files, history: history)
+            await MainActor.run {
+                self.performAPIRequest(url: url, requestBody: requestBody, provider: .gemini)
+            }
+        }
     }
     
     private func sendToOpenAIAPI(message: String, files: [ScreenAssistantFile]) {
@@ -526,13 +536,13 @@ class ScreenAssistantManager: NSObject, ObservableObject {
     
     // MARK: - API Request Builders
     
-    private func buildGeminiRequestBody(message: String, files: [ScreenAssistantFile]) -> [String: Any] {
+    private func buildGeminiRequestBody(message: String, files: [ScreenAssistantFile], history: [ChatMessage]) -> [String: Any] {
         var contents: [[String: Any]] = []
-        
+
         // Add previous conversation messages (last 10 for context)
-        let recentMessages = Array(chatMessages.suffix(10))
+        let recentMessages = Array(history.suffix(10))
         for chatMessage in recentMessages {
-            if chatMessage.id != chatMessages.last?.id { // Don't include the message we just added
+            if chatMessage.id != history.last?.id { // Don't include the message we just added
                 let role = chatMessage.isFromUser ? "user" : "model"
                 contents.append([
                     "role": role,
@@ -687,7 +697,7 @@ class ScreenAssistantManager: NSObject, ObservableObject {
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         
         do {
-            let jsonData = try JSONSerialization.data(withJSONObject: requestBody, options: .prettyPrinted)
+            let jsonData = try JSONSerialization.data(withJSONObject: requestBody, options: [])
             request.httpBody = jsonData
             
             Log.debug("📋 ScreenAssistant: Request body size: \(jsonData.count) bytes")
@@ -725,7 +735,7 @@ class ScreenAssistantManager: NSObject, ObservableObject {
         request.addValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         
         do {
-            let jsonData = try JSONSerialization.data(withJSONObject: requestBody, options: .prettyPrinted)
+            let jsonData = try JSONSerialization.data(withJSONObject: requestBody, options: [])
             request.httpBody = jsonData
         } catch {
             Log.error("❌ ScreenAssistant: Failed to encode OpenAI request - \(error)")
@@ -762,7 +772,7 @@ class ScreenAssistantManager: NSObject, ObservableObject {
         request.addValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         
         do {
-            let jsonData = try JSONSerialization.data(withJSONObject: requestBody, options: .prettyPrinted)
+            let jsonData = try JSONSerialization.data(withJSONObject: requestBody, options: [])
             request.httpBody = jsonData
         } catch {
             Log.error("❌ ScreenAssistant: Failed to encode Claude request - \(error)")

@@ -506,7 +506,7 @@ class ClipboardManager: ObservableObject {
     private func cleanupOldFiles() {
         guard let files = try? FileManager.default.contentsOfDirectory(at: ClipboardManager.clipboardDataDirectory, includingPropertiesForKeys: nil) else { return }
         
-        let referencedFiles = Set(clipboardHistory.compactMap { $0.imageFileName })
+        let referencedFiles = Set((clipboardHistory + pinnedItems).compactMap { $0.imageFileName })
         
         for file in files {
             let fileName = file.lastPathComponent

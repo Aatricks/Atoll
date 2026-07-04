@@ -1277,7 +1277,8 @@ class StatsManager: ObservableObject {
             defer { ptr = ptr?.pointee.ifa_next }
             
             guard let interface = ptr?.pointee,
-                  interface.ifa_addr.pointee.sa_family == UInt8(AF_LINK) else {
+                  let addr = interface.ifa_addr,
+                  addr.pointee.sa_family == UInt8(AF_LINK) else {
                 continue
             }
             

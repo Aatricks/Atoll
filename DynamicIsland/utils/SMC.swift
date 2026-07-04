@@ -25,10 +25,10 @@ internal enum SMCDataType: String {
     case UI32 = "ui32"
     case SP1E = "sp1e"
     case SP3C = "sp3c"
-    case SP4B = "sp5b"
+    case SP4B = "sp4b"
     case SP5A = "sp5a"
     case SPA5 = "spa5"
-    case SP69 = "sp669"
+    case SP69 = "sp69"
     case SP78 = "sp78"
     case SP87 = "sp87"
     case SP96 = "sp96"
@@ -503,8 +503,12 @@ public class SMC {
             return result
         }
         
-        memcpy(&value.pointee.bytes, &output.bytes, Int(value.pointee.dataSize))
-        
+        // Clamp to the fixed destination buffer size; a device reporting a
+        // dataSize larger than the bytes tuple would otherwise overflow it.
+        let capacity = MemoryLayout.size(ofValue: value.pointee.bytes)
+        let copyCount = min(Int(value.pointee.dataSize), capacity)
+        memcpy(&value.pointee.bytes, &output.bytes, copyCount)
+
         return kIOReturnSuccess
     }
     
