@@ -20,6 +20,7 @@ import Foundation
 import SwiftUI
 import Observation
 import Defaults
+import Combine
 
 @Observable
 @MainActor
@@ -37,6 +38,7 @@ class DownloadManager {
     private var initialCrDownloadFiles: Set<String> = []
     private var previousAllFiles: Set<String> = []
     private var ignoredFiles: Set<String> = []
+    @ObservationIgnored private var cancellables = Set<AnyCancellable>()
     
     private var downloadsDirectory: URL? {
         FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
@@ -53,6 +55,7 @@ class DownloadManager {
                     self.startMonitoringIfNeeded()
                 }
             }
+            .store(in: &cancellables)
     }
     
     private func startMonitoringIfNeeded() {
