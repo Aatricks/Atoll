@@ -96,7 +96,7 @@ final class KeyboardBrightnessSensor {
             "KeyboardBacklightBrightness" as CFString,
             kCFAllocatorDefault,
             0
-        )?.takeUnretainedValue() else {
+        )?.takeRetainedValue() else {
             throw SensorError.Keyboard.notStandard
         }
         if CFGetTypeID(property) == CFNumberGetTypeID() {
