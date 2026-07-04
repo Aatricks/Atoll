@@ -37,12 +37,49 @@ final class CustomOSDWindowManager {
     private let displayDuration: TimeInterval = 2.0
     private let animationDuration: TimeInterval = 0.3
     private var isInitialized = false
-    
+    private var screenObserver: NSObjectProtocol?
+
     // Standard macOS OSD dimensions (approximate)
     private let osdWidth: CGFloat = 200
     private let osdHeight: CGFloat = 200
-    
-    private init() {}
+
+    private init() {
+        observeScreenChanges()
+    }
+
+    deinit {
+        if let screenObserver {
+            NotificationCenter.default.removeObserver(screenObserver)
+        }
+    }
+
+    private func observeScreenChanges() {
+        // Prune per-screen windows when a display is disconnected; otherwise the
+        // dictionaries retain orphan NSWindows across hotplug.
+        screenObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.pruneWindowsForDisconnectedScreens()
+            }
+        }
+    }
+
+    private func pruneWindowsForDisconnectedScreens() {
+        let current = Set(NSScreen.screens)
+        prune(&volumeWindows, keeping: current)
+        prune(&brightnessWindows, keeping: current)
+        prune(&backlightWindows, keeping: current)
+    }
+
+    private func prune(_ windows: inout [NSScreen: OSDWindow], keeping current: Set<NSScreen>) {
+        for (screen, window) in windows where !current.contains(screen) {
+            window.nsWindow.orderOut(nil)
+            windows.removeValue(forKey: screen)
+        }
+    }
     
     // MARK: - Public API
     
@@ -118,7 +155,15 @@ final class CustomOSDWindowManager {
             backlightWindows[screen] = window
             return window
         default:
-            fatalError("Unsupported OSD type: \(type)")
+            // Only volume/brightness/backlight reach here today; degrade to a
+            // volume-keyed window rather than crashing if a new type is added.
+            assertionFailure("Unsupported OSD type: \(type)")
+            if let existing = volumeWindows[screen] {
+                return existing
+            }
+            let window = createWindow(for: type, screen: screen)
+            volumeWindows[screen] = window
+            return window
         }
     }
     

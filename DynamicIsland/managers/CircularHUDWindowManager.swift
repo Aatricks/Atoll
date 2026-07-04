@@ -34,13 +34,43 @@ final class CircularHUDWindowManager {
     private let animationDuration: TimeInterval = 0.2
     
     private var cancellables = Set<AnyCancellable>()
-    
+    private var screenObserver: NSObjectProtocol?
+
     // Layout constants removed in favor of dynamic calculation
-    
+
     private init() {
         setupSizeObserver()
+        observeScreenChanges()
     }
-    
+
+    deinit {
+        if let screenObserver {
+            NotificationCenter.default.removeObserver(screenObserver)
+        }
+    }
+
+    private func observeScreenChanges() {
+        // Prune per-screen windows when a display is disconnected; otherwise the
+        // dictionary retains orphan NSWindows across hotplug.
+        screenObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.pruneWindowsForDisconnectedScreens()
+            }
+        }
+    }
+
+    private func pruneWindowsForDisconnectedScreens() {
+        let current = Set(NSScreen.screens)
+        for (screen, window) in windows where !current.contains(screen) {
+            window.nsWindow.orderOut(nil)
+            windows.removeValue(forKey: screen)
+        }
+    }
+
     private func setupSizeObserver() {
         Defaults.publisher(.circularHUDSize, options: []).sink { [weak self] _ in
             guard let self = self else { return }
