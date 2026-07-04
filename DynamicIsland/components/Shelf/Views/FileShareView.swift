@@ -55,6 +55,9 @@ struct FileShareView: View {
                 quickShare.ensureDiscovered()
                 localSend.startDiscovery()
             }
+            .onDisappear {
+                localSend.stopDiscovery()
+            }
             .onDrop(of: [.fileURL, .url, .utf8PlainText, .plainText, .data, .image], isTargeted: $vm.dropZoneTargeting) { providers in
                 interactionNonce = .init()
                 vm.dropEvent = true
