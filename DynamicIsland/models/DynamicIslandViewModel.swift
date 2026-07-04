@@ -292,10 +292,14 @@ class DynamicIslandViewModel: NSObject, ObservableObject {
         let statusPublisher = $screen
             .compactMap { $0 }
             .removeDuplicates()
-            .map { screenName in
-                self.detector.$fullscreenStatus
+            .map { [weak self] screenName -> AnyPublisher<Bool, Never> in
+                guard let self else {
+                    return Just(false).eraseToAnyPublisher()
+                }
+                return self.detector.$fullscreenStatus
                     .map { $0[screenName] ?? false }
                     .removeDuplicates()
+                    .eraseToAnyPublisher()
             }
             .switchToLatest()
 
