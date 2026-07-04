@@ -37,6 +37,7 @@ final class LocalSendDevicePickerWindowManager {
     private var window: NSWindow?
     private var onDeviceSelected: ((LocalSendDeviceInfo) -> Void)?
     private var onDismiss: (() -> Void)?
+    private var clickMonitor: Any?
     
     private init() {}
     
@@ -99,8 +100,13 @@ final class LocalSendDevicePickerWindowManager {
         window = newWindow
         newWindow.makeKeyAndOrderFront(nil)
         
-        // Add click-outside-to-dismiss
-        NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+        // Add click-outside-to-dismiss. Retain the token so hide() can remove it;
+        // otherwise a stale monitor accumulates on every show().
+        if let existing = clickMonitor {
+            NSEvent.removeMonitor(existing)
+            clickMonitor = nil
+        }
+        clickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
             guard let self, let window = self.window else { return event }
             let locationInWindow = event.locationInWindow
             let windowFrame = window.frame
@@ -118,6 +124,10 @@ final class LocalSendDevicePickerWindowManager {
     }
     
     func hide() {
+        if let existing = clickMonitor {
+            NSEvent.removeMonitor(existing)
+            clickMonitor = nil
+        }
         window?.orderOut(nil)
         window = nil
         onDeviceSelected = nil
