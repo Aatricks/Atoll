@@ -82,8 +82,13 @@ func enabledStandardTabCount() -> Int {
         count += 1
     }
 
+    // Usage tab
+    if Defaults[.enableLLMUsageFeature] {
+        count += 1
+    }
+
     // Notes / Clipboard tab
-    if Defaults[.enableNotes] || (Defaults[.enableClipboardManager] && Defaults[.clipboardDisplayMode] == .separateTab) {
+    if Defaults[.enableNotes] || (Defaults[.enableClipboardManager] && (Defaults[.clipboardDisplayMode] == .separateTab || Defaults[.clipboardDisplayMode] == .notchTab)) {
         count += 1
     }
 
@@ -293,6 +298,13 @@ let dynamicIslandPillCornerRadiusInsets: (opened: CGFloat, closed: (standard: CG
     opened: 24,
     closed: (standard: 16, minimalistic: 16)
 )
+
+/// Extra window height past `screen.maxY` on physical-notch displays.
+let notchTopScreenBleedAmount: CGFloat = 4
+
+func notchTopScreenBleed(for screenName: String?) -> CGFloat {
+    shouldUseDynamicIslandMode(for: screenName) ? 0 : notchTopScreenBleedAmount
+}
 
 /// Vertical offset from the top screen edge for the Dynamic Island pill.
 /// Creates a visual gap so the pill floats below the menu bar, mimicking

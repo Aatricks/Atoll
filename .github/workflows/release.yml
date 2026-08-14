@@ -1,0 +1,692 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - nightly
+      - alpha
+      - beta
+      - main
+
+  # Allow manual trigger for testing
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (skip release creation)"
+        required: false
+        default: "false"
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  PROJECT: DynamicIsland.xcodeproj
+  SCHEME: DynamicIsland
+  APP_NAME: Atoll
+  TEAM_ID: 9Y64TRM77N
+
+jobs:
+  release:
+    name: Build, Sign & Release
+    runs-on: macos-26
+    timeout-minutes: 60
+
+    # Skip CI-generated commits to prevent infinite loops
+    # (appcast/changelog commits pushed by this workflow)
+    if: >-
+      !contains(github.event.head_commit.message, 'ci: update appcast') &&
+      !contains(github.event.head_commit.message, 'ci: archive changelog')
+
+    steps:
+      # ─────────────────────────────────────────────────────────────────
+      # 1. Checkout
+      # ─────────────────────────────────────────────────────────────────
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: true
+
+      # ─────────────────────────────────────────────────────────────────
+      # 2. Determine channel from branch
+      # ─────────────────────────────────────────────────────────────────
+      - name: Determine Channel
+        id: channel
+        run: |
+          BRANCH="${GITHUB_REF_NAME}"
+          case "$BRANCH" in
+            nightly) CHANNEL="nightly" ;;
+            alpha)   CHANNEL="alpha"   ;;
+            beta)    CHANNEL="beta"    ;;
+            main)    CHANNEL="stable"  ;;
+            *)       echo "::error::Unexpected branch: $BRANCH"; exit 1 ;;
+          esac
+          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+          echo "🏷️ Channel: $CHANNEL (branch: $BRANCH)"
+
+      # ─────────────────────────────────────────────────────────────────
+      # 3. Compute version string and build number
+      # ─────────────────────────────────────────────────────────────────
+      - name: Compute Version
+        id: version
+        run: |
+          BASE_VERSION=$(cat VERSION | tr -d '[:space:]')
+          CHANNEL="${{ steps.channel.outputs.channel }}"
+          DATE_STAMP=$(date -u +%Y%m%d)
+
+          # ── Monotonic build number allocator ──
+          # Use the maximum of (commit count, highest published build number + 1)
+          # so the value can never decrease even across history rewrites or
+          # divergent branches.
+          COMMIT_COUNT=$(git rev-list HEAD --count)
+          HIGHEST_PUBLISHED=$(grep -h 'sparkle:version' Updates/appcast*.xml 2>/dev/null \
+            | grep -oE '[0-9]+' | sort -rn | head -1)
+          HIGHEST_PUBLISHED=${HIGHEST_PUBLISHED:-0}
+          if [ "$COMMIT_COUNT" -gt "$HIGHEST_PUBLISHED" ]; then
+            BUILD_NUMBER=$COMMIT_COUNT
+          else
+            BUILD_NUMBER=$((HIGHEST_PUBLISHED + 1))
+          fi
+
+          # ── Auto-patch for stable releases ──
+          # If v<BASE_VERSION> already exists, find the next unused patch.N tag
+          # without modifying the VERSION file. This keeps VERSION as the
+          # "base" (e.g. 2.3.2) while releases become 2.3.2-patch.1, .2, etc.
+          case "$CHANNEL" in
+            nightly)
+              COUNT=$(git tag -l "v${BASE_VERSION}-nightly.*" 2>/dev/null | wc -l | tr -d ' ')
+              NEXT=$((COUNT + 1))
+              VERSION="${BASE_VERSION}-nightly.${DATE_STAMP}.${NEXT}"
+              PRERELEASE="true"
+              ;;
+            alpha)
+              COUNT=$(git tag -l "v${BASE_VERSION}-alpha.*" 2>/dev/null | wc -l | tr -d ' ')
+              NEXT=$((COUNT + 1))
+              VERSION="${BASE_VERSION}-alpha.${NEXT}"
+              PRERELEASE="true"
+              ;;
+            beta)
+              COUNT=$(git tag -l "v${BASE_VERSION}-beta.*" 2>/dev/null | wc -l | tr -d ' ')
+              NEXT=$((COUNT + 1))
+              VERSION="${BASE_VERSION}-beta.${NEXT}"
+              PRERELEASE="true"
+              ;;
+            stable)
+              if git tag -l "v${BASE_VERSION}" | grep -q .; then
+                # Base tag exists — find the next unused X.Y.Z version
+                MAJOR=$(echo "$BASE_VERSION" | cut -d. -f1)
+                MINOR=$(echo "$BASE_VERSION" | cut -d. -f2)
+                PATCH=$(echo "$BASE_VERSION" | cut -d. -f3)
+                PATCH=$((PATCH + 1))
+                while git tag -l "v${MAJOR}.${MINOR}.${PATCH}" | grep -q .; do
+                  PATCH=$((PATCH + 1))
+                done
+                VERSION="${MAJOR}.${MINOR}.${PATCH}"
+                echo "⚠️  Tag v${BASE_VERSION} exists — releasing as ${VERSION}"
+              else
+                VERSION="${BASE_VERSION}"
+              fi
+              PRERELEASE="false"
+              ;;
+          esac
+
+          TAG="v${VERSION}"
+          DMG_NAME="${APP_NAME}-${VERSION}.dmg"
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "build_number=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "dmg_name=$DMG_NAME" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+          echo "base_version=$BASE_VERSION" >> "$GITHUB_OUTPUT"
+
+          echo "📦 Version: $VERSION (build $BUILD_NUMBER)"
+          echo "🏷️ Tag: $TAG"
+          echo "💿 DMG: $DMG_NAME"
+
+      # ─────────────────────────────────────────────────────────────────
+      # 4. Select Xcode
+      # ─────────────────────────────────────────────────────────────────
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Download Metal Toolchain
+        run: |
+          sudo xcodebuild -runFirstLaunch || true
+          MAJOR=$(sw_vers -productVersion | cut -d. -f1)
+          if [ "$MAJOR" -ge 26 ]; then
+            downloaded=false
+            for i in 1 2 3 4 5; do
+              if sudo xcodebuild -downloadComponent MetalToolchain; then downloaded=true; break; fi
+              sleep 10
+            done
+            if [ "$downloaded" = false ] && ! xcrun -f metal >/dev/null 2>&1; then
+              echo "::error::Metal Toolchain download failed after 5 attempts and metal is unavailable."
+              exit 1
+            fi
+          else
+            echo "macOS $MAJOR: Metal ships with Xcode, skipping download."
+          fi
+
+      # ─────────────────────────────────────────────────────────────────
+      # 5. Import signing certificate
+      # ─────────────────────────────────────────────────────────────────
+      - name: Import Code Signing Certificate
+        env:
+          CERTIFICATE_P12: ${{ secrets.DEVELOPER_ID_APPLICATION_CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          # Create a temporary keychain
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Import certificate
+          CERT_PATH="$RUNNER_TEMP/certificate.p12"
+          echo "$CERTIFICATE_P12" | base64 --decode > "$CERT_PATH"
+          security import "$CERT_PATH" \
+            -P "$CERTIFICATE_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+          rm -f "$CERT_PATH"
+
+          # Add keychain to search list
+          security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain-db
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+      # ─────────────────────────────────────────────────────────────────
+      # 6. Set up notarization credentials
+      # ─────────────────────────────────────────────────────────────────
+      - name: Set Up Notarization Credentials
+        env:
+          API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+        run: |
+          # Store the API key for notarytool
+          mkdir -p ~/private_keys
+          echo "$API_KEY_P8" | base64 --decode > ~/private_keys/AuthKey_${API_KEY_ID}.p8
+
+      # ─────────────────────────────────────────────────────────────────
+      # 7. Set up Sparkle signing key
+      # ─────────────────────────────────────────────────────────────────
+      - name: Set Up Sparkle Signing Key
+        env:
+          SPARKLE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          # Write Sparkle key to a file to bypass keychain entirely (foolproof for CI)
+          mkdir -p ~/private_keys
+          echo "$SPARKLE_KEY" > ~/private_keys/sparkle_ed.key
+
+      # ─────────────────────────────────────────────────────────────────
+      # 8. Resolve SPM dependencies
+      # ─────────────────────────────────────────────────────────────────
+      - name: Resolve Dependencies
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -project "$PROJECT" \
+            -scheme "$SCHEME"
+
+      # ─────────────────────────────────────────────────────────────────
+      # 9. Update version in project
+      # ─────────────────────────────────────────────────────────────────
+      - name: Stamp Version
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          BUILD="${{ steps.version.outputs.build_number }}"
+          CHANNEL="${{ steps.channel.outputs.channel }}"
+
+          # Use agvtool to update the version numbers
+          cd "$(dirname "$PROJECT")"
+          xcrun agvtool new-marketing-version "$VERSION"
+          xcrun agvtool new-version -all "$BUILD"
+
+      # ─────────────────────────────────────────────────────────────────
+      # 10. Determine channel-specific build settings
+      # ─────────────────────────────────────────────────────────────────
+      - name: Channel Build Settings
+        id: build_settings
+        run: |
+          CHANNEL="${{ steps.channel.outputs.channel }}"
+          case "$CHANNEL" in
+            nightly) SWIFT_FLAG="NIGHTLY"; ICON_NAME="AppIconNightly" ;;
+            alpha)   SWIFT_FLAG="ALPHA";   ICON_NAME="AppIconAlpha"   ;;
+            beta)    SWIFT_FLAG="BETA";    ICON_NAME="AppIconBeta"    ;;
+            stable)  SWIFT_FLAG="";        ICON_NAME="AppIcon"        ;;
+          esac
+          echo "swift_flag=$SWIFT_FLAG" >> "$GITHUB_OUTPUT"
+          echo "icon_name=$ICON_NAME" >> "$GITHUB_OUTPUT"
+
+      # ─────────────────────────────────────────────────────────────────
+      # 11. Archive
+      # ─────────────────────────────────────────────────────────────────
+      - name: Archive
+        run: |
+          CHANNEL="${{ steps.channel.outputs.channel }}"
+          SWIFT_FLAG="${{ steps.build_settings.outputs.swift_flag }}"
+          ICON_NAME="${{ steps.build_settings.outputs.icon_name }}"
+
+          EXTRA_FLAGS=""
+          if [ -n "$SWIFT_FLAG" ]; then
+            EXTRA_FLAGS="SWIFT_ACTIVE_COMPILATION_CONDITIONS=${SWIFT_FLAG}"
+          fi
+
+          sudo DevToolsSecurity -enable
+
+          xcodebuild archive \
+            -project "$PROJECT" \
+            -scheme "$SCHEME" \
+            -archivePath build/${APP_NAME}.xcarchive \
+            -configuration Release \
+            CODE_SIGN_IDENTITY="Developer ID Application" \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            CODE_SIGN_STYLE=Manual \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            ASSETCATALOG_COMPILER_APPICON_NAME="$ICON_NAME" \
+            $EXTRA_FLAGS
+
+      # ─────────────────────────────────────────────────────────────────
+      # 12. Export archive to .app
+      # ─────────────────────────────────────────────────────────────────
+      - name: Export Archive
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath build/${APP_NAME}.xcarchive \
+            -exportPath build/export \
+            -exportOptionsPlist ExportOptions.plist
+
+      # ─────────────────────────────────────────────────────────────────
+      # 12b. Ensure BluetoothHUDAnimations are in the app bundle
+      # ─────────────────────────────────────────────────────────────────
+      - name: Copy BluetoothHUD Animations
+        run: |
+          APP_RESOURCES="build/export/${APP_NAME}.app/Contents/Resources"
+          SRC_DIR="DynamicIsland/BluetoothHUDAnimations"
+          if [ ! -d "$SRC_DIR" ]; then
+            echo "::error::BluetoothHUDAnimations source directory not found at $SRC_DIR"
+            exit 1
+          fi
+
+          MOV_COUNT=$(find "$SRC_DIR" -maxdepth 1 -name '*.mov' | wc -l | tr -d ' ')
+          if [ "$MOV_COUNT" -eq 0 ]; then
+            echo "::error::No .mov files found in $SRC_DIR"
+            exit 1
+          fi
+
+          DEST="$APP_RESOURCES/BluetoothHUDAnimations"
+          mkdir -p "$DEST"
+          cp -n "$SRC_DIR"/*.mov "$DEST/"
+
+          COPIED=$(find "$DEST" -maxdepth 1 -name '*.mov' | wc -l | tr -d ' ')
+          if [ "$COPIED" -eq 0 ]; then
+            echo "::error::Copy succeeded but no .mov files found in destination"
+            exit 1
+          fi
+          echo "✅ BluetoothHUDAnimations: $COPIED .mov files copied"
+
+      # ─────────────────────────────────────────────────────────────────
+      # 13. Code sign Sparkle XPC services
+      # ─────────────────────────────────────────────────────────────────
+      - name: Sign Sparkle XPC Services
+        run: |
+          APP_PATH="build/export/${APP_NAME}.app"
+          ENTITLEMENTS_PATH="$RUNNER_TEMP/${APP_NAME}.entitlements"
+
+          # Keep the capabilities Xcode applied to the archived app. Re-signing
+          # without this file strips TCC-gated capabilities such as Camera and
+          # Apple Events automation from the shipped app.
+          codesign -d --entitlements :- "$APP_PATH" > "$ENTITLEMENTS_PATH"
+
+          # Sign Sparkle XPC services with hardened runtime
+          find "$APP_PATH" -name "*.xpc" -print0 | while IFS= read -r -d '' xpc; do
+            codesign --force --options runtime \
+              --sign "Developer ID Application: Hariharan Mudaliar ($TEAM_ID)" \
+              "$xpc"
+          done
+
+          # Re-sign the Sparkle framework
+          SPARKLE_FW="$APP_PATH/Contents/Frameworks/Sparkle.framework"
+          if [ -d "$SPARKLE_FW" ]; then
+            codesign --force --options runtime \
+              --sign "Developer ID Application: Hariharan Mudaliar ($TEAM_ID)" \
+              "$SPARKLE_FW"
+          fi
+
+          # Re-sign the entire app
+          codesign --force --options runtime \
+            --entitlements "$ENTITLEMENTS_PATH" \
+            --sign "Developer ID Application: Hariharan Mudaliar ($TEAM_ID)" \
+            "$APP_PATH"
+
+          # Verify
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+
+          # Confirm the shipped app still contains the privacy capabilities
+          # required by the features it exposes. This catches any future
+          # signing change that would silently strip the app's entitlements.
+          FINAL_ENTITLEMENTS_PATH="$RUNNER_TEMP/${APP_NAME}-final.entitlements"
+          codesign -d --entitlements :- "$APP_PATH" > "$FINAL_ENTITLEMENTS_PATH"
+          /usr/libexec/PlistBuddy -c "Print :com.apple.security.device.camera" "$FINAL_ENTITLEMENTS_PATH" | grep -qx "true"
+          /usr/libexec/PlistBuddy -c "Print :com.apple.security.automation.apple-events" "$FINAL_ENTITLEMENTS_PATH" | grep -qx "true"
+
+      # ─────────────────────────────────────────────────────────────────
+      # 14. Create DMG
+      # ─────────────────────────────────────────────────────────────────
+      - name: Create DMG
+        run: |
+          DMG_NAME="${{ steps.version.outputs.dmg_name }}"
+          APP_PATH="build/export/${APP_NAME}.app"
+
+          # Use sindresorhus/create-dmg via npx
+          # --no-code-sign is used so the subsequent dedicated Sign DMG step handles it
+          npx create-dmg "$APP_PATH" build/ --overwrite --no-code-sign
+
+          # sindresorhus/create-dmg generates a DMG with a name like "Atoll 2.3.0.dmg"
+          # Rename it to match our required DMG_NAME format (e.g. Atoll-2.3.0-nightly.dmg)
+          GENERATED_DMG=$(find build/ -maxdepth 1 -name "*.dmg" | head -1)
+          if [ -n "$GENERATED_DMG" ] && [ "$GENERATED_DMG" != "build/${DMG_NAME}" ]; then
+            mv "$GENERATED_DMG" "build/${DMG_NAME}"
+            echo "Renamed $GENERATED_DMG to build/${DMG_NAME}"
+          fi
+
+      # ─────────────────────────────────────────────────────────────────
+      # 15. Sign DMG
+      # ─────────────────────────────────────────────────────────────────
+      - name: Sign DMG
+        run: |
+          DMG_PATH="build/${{ steps.version.outputs.dmg_name }}"
+          codesign --force \
+            -s "Developer ID Application: Hariharan Mudaliar ($TEAM_ID)" \
+            "$DMG_PATH"
+          codesign --verify --verbose "$DMG_PATH"
+
+      # ─────────────────────────────────────────────────────────────────
+      # 16. Notarize DMG
+      # ─────────────────────────────────────────────────────────────────
+      - name: Notarize DMG
+        env:
+          API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          API_KEY_ISSUER: ${{ secrets.APPLE_API_KEY_ISSUER_ID }}
+        run: |
+          DMG_PATH="build/${{ steps.version.outputs.dmg_name }}"
+
+          xcrun notarytool submit "$DMG_PATH" \
+            --key ~/private_keys/AuthKey_${API_KEY_ID}.p8 \
+            --key-id "$API_KEY_ID" \
+            --issuer "$API_KEY_ISSUER" \
+            --wait \
+            --timeout 30m
+
+          xcrun stapler staple "$DMG_PATH"
+          xcrun stapler validate "$DMG_PATH"
+
+      # ─────────────────────────────────────────────────────────────────
+      # 17. Generate Sparkle appcast
+      # ─────────────────────────────────────────────────────────────────
+      - name: Generate Sparkle Appcast
+        run: |
+          CHANNEL="${{ steps.channel.outputs.channel }}"
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="${{ steps.version.outputs.tag }}"
+          DMG_NAME="${{ steps.version.outputs.dmg_name }}"
+
+          # Find generate_appcast from SPM-resolved Sparkle
+          DERIVED_DATA=$(xcodebuild -project "$PROJECT" -scheme "$SCHEME" -showBuildSettings 2>/dev/null | grep -m1 BUILD_DIR | awk '{print $3}' | sed 's|/Build/Products||')
+          GENERATE_APPCAST=$(find "$DERIVED_DATA" -name "generate_appcast" -type f 2>/dev/null | head -1)
+          SIGN_UPDATE=$(find "$DERIVED_DATA" -name "sign_update" -type f 2>/dev/null | head -1)
+
+          if [ -z "$GENERATE_APPCAST" ]; then
+            echo "::warning::generate_appcast not found in DerivedData, trying SPM artifacts..."
+            GENERATE_APPCAST=$(find ~/Library/Developer/Xcode -name "generate_appcast" -type f 2>/dev/null | head -1)
+            SIGN_UPDATE=$(find ~/Library/Developer/Xcode -name "sign_update" -type f 2>/dev/null | head -1)
+          fi
+
+          if [ -z "$GENERATE_APPCAST" ]; then
+            echo "::error::Cannot find Sparkle's generate_appcast tool"
+            exit 1
+          fi
+
+          echo "Using generate_appcast at: $GENERATE_APPCAST"
+
+          # Create a staging folder with just the DMG
+          mkdir -p build/appcast-staging
+          cp "build/${DMG_NAME}" "build/appcast-staging/"
+
+          # Generate the appcast using the explicit key file to bypass keychain prompts
+          "$GENERATE_APPCAST" --ed-key-file ~/private_keys/sparkle_ed.key build/appcast-staging
+
+          # The generated appcast.xml is in build/appcast-staging/
+          if [ -f "build/appcast-staging/appcast.xml" ]; then
+            echo "✅ Appcast generated successfully"
+          else
+            echo "::error::Appcast generation failed"
+            exit 1
+          fi
+
+          # Also sign the DMG and capture the EdDSA signature
+          if [ -n "$SIGN_UPDATE" ]; then
+            SIGN_OUTPUT=$("$SIGN_UPDATE" --ed-key-file ~/private_keys/sparkle_ed.key "build/${DMG_NAME}" 2>&1 || true)
+            echo "sign_update output: $SIGN_OUTPUT"
+          fi
+
+      # ─────────────────────────────────────────────────────────────────
+      # 18. Extract release notes from CHANGELOG.md
+      # ─────────────────────────────────────────────────────────────────
+      - name: Extract Release Notes
+        id: release_notes
+        run: |
+          CHANNEL="${{ steps.channel.outputs.channel }}"
+          VERSION="${{ steps.version.outputs.version }}"
+
+          # Extract the [Unreleased] section from CHANGELOG.md
+          NOTES=$(awk '/^## \[Unreleased\]/{found=1; next} /^## \[/{if(found) exit} found{print}' CHANGELOG.md)
+
+          if [ -z "$NOTES" ]; then
+            NOTES="No changelog entries for this release."
+          fi
+
+          # Add commit history for nightly builds
+          if [ "$CHANNEL" = "nightly" ]; then
+            # Get last release tag
+            LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+            if [ -n "$LAST_TAG" ]; then
+              COMMITS=$(git log --oneline "${LAST_TAG}..HEAD" | head -30)
+              CONTRIBUTORS=$(git shortlog -sn "${LAST_TAG}..HEAD" | head -10)
+            else
+              COMMITS=$(git log --oneline -30)
+              CONTRIBUTORS=$(git shortlog -sn -30)
+            fi
+
+            HR="---"
+            NOTES=$(printf "%s\n\n%s\n\n### Commits since last release\n\`\`\`\n%s\n\`\`\`\n\n### Contributors\n\`\`\`\n%s\n\`\`\`" "$NOTES" "$HR" "$COMMITS" "$CONTRIBUTORS")
+          fi
+
+          # Prepend channel badge
+          HEADER=$(printf "## %s %s\n\n> **Channel:** %s\n> **Build:** %s\n> **Date:** %s\n\n" "$APP_NAME" "$VERSION" "$CHANNEL" "${{ steps.version.outputs.build_number }}" "$(date -u +%Y-%m-%d)")
+
+          FULL_NOTES="${HEADER}${NOTES}"
+
+          # Write to file for gh release
+          echo "$FULL_NOTES" > build/release_notes.md
+          echo "📝 Release notes written to build/release_notes.md"
+
+      # ─────────────────────────────────────────────────────────────────
+      # 19. Create GitHub Release
+      # ─────────────────────────────────────────────────────────────────
+      - name: Create GitHub Release
+        if: ${{ inputs.dry_run != 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          VERSION="${{ steps.version.outputs.version }}"
+          DMG_NAME="${{ steps.version.outputs.dmg_name }}"
+          PRERELEASE="${{ steps.version.outputs.prerelease }}"
+
+          PRERELEASE_FLAG=""
+          if [ "$PRERELEASE" = "true" ]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+
+          # Create tag
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Release $VERSION"
+          git push origin "$TAG"
+
+          # Create release
+          gh release create "$TAG" \
+            --title "${APP_NAME} ${VERSION}" \
+            --notes-file build/release_notes.md \
+            $PRERELEASE_FLAG \
+            "build/${DMG_NAME}"
+
+          # Also upload the generated appcast as an asset
+          if [ -f "build/appcast-staging/appcast.xml" ]; then
+            gh release upload "$TAG" "build/appcast-staging/appcast.xml" --clobber
+          fi
+
+      # ─────────────────────────────────────────────────────────────────
+      # 20. Update channel-specific appcast in Updates/
+      # ─────────────────────────────────────────────────────────────────
+      - name: Update Channel Appcast
+        if: ${{ inputs.dry_run != 'true' }}
+        run: |
+          CHANNEL="${{ steps.channel.outputs.channel }}"
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="${{ steps.version.outputs.tag }}"
+          BUILD_NUMBER="${{ steps.version.outputs.build_number }}"
+          DMG_NAME="${{ steps.version.outputs.dmg_name }}"
+          BRANCH="${{ steps.channel.outputs.branch }}"
+
+          # Determine the appcast filename
+          case "$CHANNEL" in
+            stable)  APPCAST_FILE="appcast.xml" ;;
+            *)       APPCAST_FILE="appcast-${CHANNEL}.xml" ;;
+          esac
+
+          APPCAST_PATH="Updates/${APPCAST_FILE}"
+
+          # Get DMG file size
+          DMG_SIZE=$(stat -f%z "build/${DMG_NAME}" 2>/dev/null || stat -c%s "build/${DMG_NAME}" 2>/dev/null)
+
+          # Get the sparkle signature from the generated appcast
+          # Note: grep -oP is not available on macOS, use grep -o with sed instead
+          SIGNATURE=""
+          if [ -f "build/appcast-staging/appcast.xml" ]; then
+            SIGNATURE=$(grep -o 'sparkle:edSignature="[^"]*"' "build/appcast-staging/appcast.xml" | head -1 | sed 's/sparkle:edSignature="//;s/"//' || true)
+          fi
+
+          if [ -z "$SIGNATURE" ]; then
+            echo "::error::Sparkle signature extraction failed. The appcast cannot be updated with an unsigned DMG."
+            exit 1
+          fi
+
+          # Build the download URL (GitHub Release asset)
+          DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/${DMG_NAME}"
+
+          # Create/update the channel appcast
+          NEW_ITEM=$(printf "        <item>\n            <title>%s</title>\n            <pubDate>%s</pubDate>\n            <sparkle:version>%s</sparkle:version>\n            <sparkle:shortVersionString>%s</sparkle:shortVersionString>\n            <sparkle:minimumSystemVersion>14.6</sparkle:minimumSystemVersion>\n            <enclosure url=\"%s\" length=\"%s\" type=\"application/octet-stream\" sparkle:edSignature=\"%s\"/>\n        </item>" "$VERSION" "$(date -u '+%a, %d %b %Y %H:%M:%S %z')" "$BUILD_NUMBER" "$VERSION" "$DOWNLOAD_URL" "$DMG_SIZE" "$SIGNATURE")
+
+          if [ -f "$APPCAST_PATH" ]; then
+            # Insert new item at the top of the channel element
+            # Use awk to insert after <channel> + <title>
+            export NEW_ITEM
+            awk '
+              /<title>Atoll<\/title>/ { print; print ENVIRON["NEW_ITEM"]; next }
+              { print }
+            ' "$APPCAST_PATH" > "${APPCAST_PATH}.tmp"
+            mv "${APPCAST_PATH}.tmp" "$APPCAST_PATH"
+          else
+            # Create new appcast file
+            printf '<?xml version="1.0" standalone="yes"?>\n' > "$APPCAST_PATH"
+            printf '<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">\n' >> "$APPCAST_PATH"
+            printf '    <channel>\n' >> "$APPCAST_PATH"
+            printf '        <title>Atoll</title>\n' >> "$APPCAST_PATH"
+            echo "$NEW_ITEM" >> "$APPCAST_PATH"
+            printf '    </channel>\n' >> "$APPCAST_PATH"
+            printf '</rss>\n' >> "$APPCAST_PATH"
+          fi
+
+          # Commit and push the updated appcast to main
+          # All feed URLs point to raw.githubusercontent.com/.../main/Updates/
+          git config user.name "Atoll-XML-Updater[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Stash appcast changes, checkout main, apply, push
+          cp "$APPCAST_PATH" "/tmp/${APPCAST_FILE}"
+          git stash --include-untracked || true
+          git fetch origin main
+          git checkout main
+          cp "/tmp/${APPCAST_FILE}" "$APPCAST_PATH"
+          git add "$APPCAST_PATH"
+          git commit -m "ci: update appcast ${APPCAST_FILE} for ${VERSION} [skip ci]" || echo "No changes to commit"
+          git push origin main
+
+          # Return to the original branch
+          git checkout "$BRANCH" || true
+
+      # ─────────────────────────────────────────────────────────────────
+      # 21. Archive CHANGELOG for stable releases
+      # ─────────────────────────────────────────────────────────────────
+      - name: Archive Changelog (Stable Only)
+        if: ${{ steps.channel.outputs.channel == 'stable' && inputs.dry_run != 'true' }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          DATE=$(date -u +%Y-%m-%d)
+
+          # Move [Unreleased] content to a versioned section
+          # Use awk instead of sed for reliable multiline insertion on macOS
+          awk -v ver="${VERSION}" -v dt="${DATE}" '
+            /^## \[Unreleased\]/ {
+              print $0
+              print ""
+              print "### Added"
+              print ""
+              print "### Changed"
+              print ""
+              print "### Fixed"
+              print ""
+              print "### Removed"
+              print ""
+              print "## [" ver "] - " dt
+              next
+            }
+            { print }
+          ' CHANGELOG.md > CHANGELOG.md.tmp
+          mv CHANGELOG.md.tmp CHANGELOG.md
+
+          git config user.name "Atoll-XML-Updater[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          git commit -m "ci: archive changelog for v${VERSION} [skip ci]" || echo "No changes to commit"
+          git push origin main
+
+      # ─────────────────────────────────────────────────────────────────
+      # 22. Cleanup
+      # ─────────────────────────────────────────────────────────────────
+      - name: Cleanup Keychain
+        if: always()
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
+          rm -rf ~/private_keys

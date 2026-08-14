@@ -21,6 +21,7 @@ import SwiftUI
 import SkyLightWindow
 import Defaults
 import QuartzCore
+import Combine
 
 @MainActor
 final class LockScreenWeatherPanelManager {
@@ -34,6 +35,7 @@ final class LockScreenWeatherPanelManager {
     private var lastInlineBaselineHeight: CGFloat = 0
     private var screenChangeObserver: NSObjectProtocol?
     private var workspaceObservers: [NSObjectProtocol] = []
+    private var cancellables = Set<AnyCancellable>()
 
     private init() {
         registerScreenChangeObservers()
@@ -113,6 +115,9 @@ final class LockScreenWeatherPanelManager {
             SkyLightOperator.shared.delegateWindow(newWindow)
             hasDelegated = true
         }
+        
+        SiriVisibilityMonitor.shared.autohide(newWindow, cancellables: &cancellables)
+        
         return newWindow
     }
 
@@ -184,7 +189,7 @@ final class LockScreenWeatherPanelManager {
     private func handleScreenGeometryChange(reason: String) {
         guard window?.isVisible == true else { return }
         refreshPositionForOffsets(animated: false)
-        Log.debug("LockScreenWeatherPanelManager: realigned window due to \(reason)")
+        print("LockScreenWeatherPanelManager: realigned window due to \(reason)")
     }
 
     private func currentScreen() -> NSScreen? {

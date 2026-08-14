@@ -331,17 +331,39 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Rebuilds the notch's CGSSpace membership from the current hide option and the
+    /// live windows. The space pins the notch above every space (fullscreen included)
+    /// and is used **only** for "Never hide"; the hide options keep the set empty so
+    /// FullscreenMediaDetector can hide the notch. Assigning the whole set lets the
+    /// CGSSpace diff additions/removals, so this is safe to call on any change.
+    @MainActor
+    private func syncNotchSpaceMembership() {
+        guard Defaults[.hideNotchOption] == .never else {
+            NotchSpaceManager.shared.notchSpace.windows = []
+            return
+        }
+        if Defaults[.showOnAllDisplays] {
+            NotchSpaceManager.shared.notchSpace.windows = Set(windows.values)
+        } else if let window = window {
+            NotchSpaceManager.shared.notchSpace.windows = [window]
+        } else {
+            NotchSpaceManager.shared.notchSpace.windows = []
+        }
+    }
+
     private func createDynamicIslandWindow(for screen: NSScreen, with viewModel: DynamicIslandViewModel)
         -> NSWindow
     {
         // Use the current required size instead of always using openNotchSize
         let baseSize = calculateRequiredNotchSize()
         let requiredSize = adjustedSizeForScreen(baseSize, screen: screen)
+        let roundedWidth = requiredSize.width.rounded()
+        let roundedHeight = requiredSize.height.rounded()
         
         let window = DynamicIslandWindow(
             contentRect: NSRect(
-                x: 0, y: 0, width: requiredSize.width, height: requiredSize.height),
-            styleMask: [.borderless, .nonactivatingPanel, .utilityWindow, .hudWindow],
+                x: 0, y: 0, width: roundedWidth, height: roundedHeight),
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
@@ -352,12 +374,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             rootView: ContentView()
                 .environmentObject(viewModel)
                 .environmentObject(webcamManager)
-                //.moveToSky()
         )
         
         window.orderFrontRegardless()
-        NotchSpaceManager.shared.notchSpace.windows.insert(window)
-        //SkyLightOperator.shared.delegateWindow(window)
+        syncNotchSpaceMembership()
 
         viewModel.$hideOnClosed
             .receive(on: RunLoop.main)
@@ -369,9 +389,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 } else {
                     if !window.isVisible {
                         window.orderFrontRegardless()
-                        // orderOut can drop the panel from the notch SkyLight space;
-                        // re-register so it returns at the correct level (insert is idempotent).
-                        NotchSpaceManager.shared.notchSpace.windows.insert(window)
+                        self.syncNotchSpaceMembership()
                         self.positionWindow(window, on: screen)
                     }
                 }
@@ -389,15 +407,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Use the same centering logic as updateWindowSizeIfNeeded()
         let screenFrame = screen.frame
+        let roundedWidth = window.frame.width.rounded()
+        let roundedHeight = window.frame.height.rounded()
         let centerX = screenFrame.origin.x + (screenFrame.width / 2)
-        let newX = centerX - (window.frame.width / 2)
-        let newY = screenFrame.origin.y + screenFrame.height - window.frame.height
+        let newX = (centerX - (roundedWidth / 2)).rounded()
+        let newY = (screenFrame.origin.y + screenFrame.height - roundedHeight).rounded()
         
         window.setFrame(NSRect(
             x: newX,
             y: newY,
-            width: window.frame.width,
-            height: window.frame.height
+            width: roundedWidth,
+            height: roundedHeight
         ), display: false)
         
         if changeAlpha {
@@ -538,12 +558,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func resizeWindow(_ window: NSWindow, on screen: NSScreen, to size: CGSize, animated: Bool) {
         let screenFrame = screen.frame
         // Clamp width to screen width so the notch never extends beyond screen edges on scaled displays
-        let clampedWidth = min(size.width, screenFrame.width)
-        let clampedHeight = min(size.height, screenFrame.height)
+        let roundedWidth = min(size.width, screenFrame.width).rounded()
+        let roundedHeight = min(size.height, screenFrame.height).rounded()
         let centerX = screenFrame.midX
-        let newX = centerX - (clampedWidth / 2)
-        let newY = screenFrame.origin.y + screenFrame.height - clampedHeight
-        let targetFrame = NSRect(x: newX, y: newY, width: clampedWidth, height: clampedHeight)
+        let newX = (centerX - (roundedWidth / 2)).rounded()
+        let newY = (screenFrame.origin.y + screenFrame.height - roundedHeight).rounded()
+        let targetFrame = NSRect(x: newX, y: newY, width: roundedWidth, height: roundedHeight)
 
         window.setFrame(targetFrame, display: true)
     }
@@ -621,17 +641,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         LunarManager.shared.configure(coordinator: coordinator)
         
         // Setup ScreenRecording Manager
-        if Defaults[.enableScreenRecordingDetection] {
+        if Defaults[.enableScreenRecordingDetection] && !AppRuntimeEnvironment.isUITesting {
             ScreenRecordingManager.shared.startMonitoring()
         }
         
         // Setup Do Not Disturb Manager
-        if Defaults[.enableDoNotDisturbDetection] {
+        if Defaults[.enableDoNotDisturbDetection] && !AppRuntimeEnvironment.isUITesting {
             dndManager.startMonitoring()
         }
 
         // Setup Privacy Indicator Manager (camera and microphone monitoring)
-        PrivacyIndicatorManager.shared.startMonitoring()
+        if !AppRuntimeEnvironment.isUITesting {
+            PrivacyIndicatorManager.shared.startMonitoring()
+        }
+
+        // Setup Siri visibility monitor for window level adaptation
+        SiriVisibilityMonitor.shared.startMonitoring()
+
+        // Setup LLM usage tracker
+        if Defaults[.enableLLMUsageFeature] || Defaults[.enableLLMUsageTracking] {
+            LLMUsageManager.shared.start()
+        }
         
         // Setup Real-time Audio Waveform capture if enabled.
         // Capture itself is started on demand by the visualizer views
@@ -785,7 +815,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }.store(in: &cancellables)
 
-        // Note: Polling setting removed - now uses event-driven private API detection only
+        // Pin/unpin the notch above all spaces when the hide option changes:
+        // "Never hide" joins the max-level CGSSpace, the hide options leave it.
+        Defaults.publisher(.hideNotchOption, options: []).sink { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.syncNotchSpaceMembership()
+            }
+        }.store(in: &cancellables)
 
         NotificationCenter.default.addObserver(
             self,
@@ -1192,6 +1228,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // Cancel the auto-close armed by `toggleNotchOpen`. Switching to the clipboard tab
+    // from the header only changes `coordinator.currentView`, so without this the notch
+    // can close mid-copy/drag a few seconds after it was opened.
+    func cancelPendingNotchAutoClose() {
+        closeNotchWorkItem?.cancel()
+        closeNotchWorkItem = nil
+    }
+
     private func registerOptionalShortcutHandlers() {
         guard !optionalShortcutHandlersRegistered else { return }
         optionalShortcutHandlersRegistered = true
@@ -1230,6 +1274,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         vm.close()
                     } else {
                         coordinator.currentView = .notes
+                    }
+                }
+            case .notchTab:
+                var activeVM = vm
+                if Defaults[.showOnAllDisplays] {
+                    let mouseLocation = NSEvent.mouseLocation
+                    for screen in NSScreen.screens where screen.frame.contains(mouseLocation) {
+                        if let screenViewModel = viewModels[screen] {
+                            activeVM = screenViewModel
+                            break
+                        }
+                    }
+                }
+                cancelPendingNotchAutoClose()
+                if activeVM.notchState == .closed {
+                    activeVM.open()
+                    coordinator.currentView = .clipboard
+                } else {
+                    if coordinator.currentView == .clipboard {
+                        activeVM.close()
+                    } else {
+                        coordinator.currentView = .clipboard
                     }
                 }
             }

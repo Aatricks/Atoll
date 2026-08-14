@@ -31,6 +31,8 @@ import ObjectiveC
 final class ShelfItemViewModel: ObservableObject {
     @Published private(set) var item: ShelfItem
     @Published var thumbnail: NSImage?
+    @Published var displayName: String = ""
+    @Published var icon: NSImage?
     @Published var isDropTargeted: Bool = false
     @Published var isRenaming: Bool = false
     @Published var draftTitle: String = ""
@@ -43,22 +45,108 @@ final class ShelfItemViewModel: ObservableObject {
 
     init(item: ShelfItem) {
         self.item = item
-        self.draftTitle = item.displayName
-        Task { await loadThumbnail() }
+        self.displayName = ""
+        self.icon = nil
+        Task { await loadMetadata() }
     }
 
     var isSelected: Bool { selection.isSelected(item.id) }
 
-    func loadThumbnail() async {
-        guard let url = item.fileURL else { return }
-        if let image = await ThumbnailService.shared.thumbnail(for: url, size: CGSize(width: 56, height: 56)) {
-            self.thumbnail = image
+    // Single coordinated load: resolves bookmark once, populates all metadata
+    func loadMetadata() async {
+        guard case .file(let bookmarkData) = item.kind else { return }
+        let bookmark = Bookmark(data: bookmarkData)
+        let (url, _) = await bookmark.resolveAsync()
+        guard let resolvedURL = url else { return }
+
+        // Self-healing: refresh the cached path in case the file moved since it
+        // was dropped. No-op when unchanged, so it won't churn persistence.
+        let itemID = item.id
+        let resolvedPath = resolvedURL.standardizedFileURL.path
+        await MainActor.run {
+            ShelfStateViewModel.shared.applyCachedPath(resolvedPath, for: itemID, resolvedFrom: bookmarkData)
         }
+
+        // Load display name
+        let name = await loadDisplayNameFromURL(resolvedURL)
+        await MainActor.run { self.displayName = name }
+        
+        // Load icon
+        let image = await loadIconFromURL(resolvedURL)
+        await MainActor.run { self.icon = image }
+        
+        // Load thumbnail
+        if let thumbnailImage = await ThumbnailService.shared.thumbnail(for: resolvedURL, size: CGSize(width: 56, height: 56)) {
+            await MainActor.run { self.thumbnail = thumbnailImage }
+        }
+    }
+
+    func loadDisplayName() async {
+        guard case .file(let bookmarkData) = item.kind else { return }
+        let bookmark = Bookmark(data: bookmarkData)
+        let (url, _) = await bookmark.resolveAsync()
+        guard let resolvedURL = url else { return }
+        let name = await loadDisplayNameFromURL(resolvedURL)
+        await MainActor.run { self.displayName = name }
+    }
+
+    private func loadDisplayNameFromURL(_ url: URL) async -> String {
+        if url.pathExtension.lowercased() == "json" && url.path.contains("TextBlocks") {
+            do {
+                let data = try Data(contentsOf: url)
+                let decoder = JSONDecoder()
+                decoder.dateDecodingStrategy = .iso8601
+                struct TextBlockData: Codable {
+                    let content: String
+                    let title: String?
+                    var displayTitle: String {
+                        if let title = title, !title.isEmpty { return title }
+                        let firstLine = content.components(separatedBy: .newlines).first ?? content
+                        if firstLine.count > 50 { return String(firstLine.prefix(47)) + "..." }
+                        return firstLine
+                    }
+                }
+                if let textData = try? decoder.decode(TextBlockData.self, from: data) {
+                    return textData.displayTitle
+                }
+            } catch { /* fall through */ }
+        } else if url.pathExtension.lowercased() == "webloc" && url.path.contains("WebLocs") {
+            do {
+                let data = try Data(contentsOf: url)
+                if let plist = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+                   let urlString = plist["URL"] as? String {
+                    let title = plist["Title"] as? String
+                    return title ?? urlString
+                }
+            } catch { /* fall through */ }
+        }
+        return (try? url.resourceValues(forKeys: [.localizedNameKey]).localizedName) ?? url.lastPathComponent
+    }
+
+    func loadIcon() async {
+        guard case .file(let bookmarkData) = item.kind else { return }
+        let bookmark = Bookmark(data: bookmarkData)
+        let (url, _) = await bookmark.resolveAsync()
+        guard let resolvedURL = url else { return }
+        let image = await loadIconFromURL(resolvedURL)
+        await MainActor.run { self.icon = image }
+    }
+
+    private func loadIconFromURL(_ url: URL) async -> NSImage {
+        return NSWorkspace.shared.icon(forFile: url.path)
+    }
+
+    // Async version to resolve file URL without blocking main thread
+    func resolveFileURL() async -> URL? {
+        guard case .file(let bookmarkData) = item.kind else { return nil }
+        let bookmark = Bookmark(data: bookmarkData)
+        let (url, _) = await bookmark.resolveAsync()
+        return url
     }
 
     // MARK: - Drag & Drop helpers
     func dragItemProvider() -> NSItemProvider {
-    let selectedItems = selection.selectedItems(in: ShelfStateViewModel.shared.items)
+        let selectedItems = selection.selectedItems(in: ShelfStateViewModel.shared.items)
         if selectedItems.count > 1 && selectedItems.contains(where: { $0.id == item.id }) {
             return createMultiItemProvider(for: selectedItems)
         }
@@ -69,11 +157,23 @@ final class ShelfItemViewModel: ObservableObject {
         switch item.kind {
         case .file:
             let provider = NSItemProvider()
-            if let url = ShelfStateViewModel.shared.resolveAndUpdateBookmark(for: item) {
-                provider.registerObject(url as NSURL, visibility: .all)
-            } else {
-                provider.registerObject(item.displayName as NSString, visibility: .all)
+            // Use registerFileRepresentation with async load handler
+            provider.registerFileRepresentation(forTypeIdentifier: UTType.fileURL.identifier, fileOptions: [], visibility: .all) { completion in
+                // This is called on a background thread - we can do async work
+                Task {
+                    let url = await ShelfStateViewModel.shared.resolveAndUpdateBookmarkAsync(for: item)
+                    if let url = url {
+                        _ = url.startAccessingSecurityScopedResource()
+                        completion(url, true, nil)
+                    } else {
+                        completion(nil, false, nil)
+                    }
+                }
+                // Return nil progress - completion will be called async
+                return nil
             }
+            // Fallback: also register display name as plain text
+            provider.registerObject(item.displayName as NSString, visibility: .all)
             return provider
         case .text(let string):
             return NSItemProvider(object: string as NSString)
@@ -84,27 +184,38 @@ final class ShelfItemViewModel: ObservableObject {
 
     private func createMultiItemProvider(for items: [ShelfItem]) -> NSItemProvider {
         let provider = NSItemProvider()
-        var urls: [URL] = []
         var textItems: [String] = []
+        var fileItems: [ShelfItem] = []
+        
         for item in items {
             switch item.kind {
             case .file:
-                if let url = ShelfStateViewModel.shared.resolveAndUpdateBookmark(for: item) {
-                    urls.append(url)
-                } else {
-                    textItems.append(item.displayName)
-                }
+                fileItems.append(item)
             case .text(let string):
                 textItems.append(string)
             case .link:
                 break
             }
         }
-        if !urls.isEmpty {
-            for url in urls {
-                provider.registerObject(url as NSURL, visibility: .all)
+        
+        // Register file representations with lazy loading
+        if !fileItems.isEmpty {
+            for fileItem in fileItems {
+                provider.registerFileRepresentation(forTypeIdentifier: UTType.fileURL.identifier, fileOptions: [], visibility: .all) { completion in
+                    Task {
+                        let url = await ShelfStateViewModel.shared.resolveAndUpdateBookmarkAsync(for: fileItem)
+                        if let url = url {
+                            _ = url.startAccessingSecurityScopedResource()
+                            completion(url, true, nil)
+                        } else {
+                            completion(nil, false, nil)
+                        }
+                    }
+                    return nil
+                }
             }
         }
+        
         if !textItems.isEmpty {
             provider.registerObject(textItems.joined(separator: "\n") as NSString, visibility: .all)
         }
@@ -146,8 +257,8 @@ final class ShelfItemViewModel: ObservableObject {
                 for item in ShelfSelectionModel.shared.selectedItems(in: ShelfStateViewModel.shared.items) {
                     switch item.kind {
                     case .file:
-                        // Use immediate update for user-initiated share action
-                        if let url = ShelfStateViewModel.shared.resolveAndUpdateBookmark(for: item) {
+                        // Use async resolution for user-initiated share action
+                        if let url = await ShelfStateViewModel.shared.resolveAndUpdateBookmarkAsync(for: item) {
                             itemsToShare.append(url)
                             fileURLs.append(url)
                         }
@@ -463,7 +574,7 @@ final class ShelfItemViewModel: ObservableObject {
                                 try await NSWorkspace.shared.open(allSelectedURLs, withApplicationAt: appURL, configuration: config)
                             }
                         } catch {
-                            Log.error("❌ Failed to open with application: \(error.localizedDescription)")
+                            print("❌ Failed to open with application: \(error.localizedDescription)")
                         }
                 }
                 return
@@ -502,8 +613,8 @@ final class ShelfItemViewModel: ObservableObject {
                 Task {
                     let urls = await selected.asyncCompactMap { item -> URL? in
                         if case .file = item.kind {
-                            // Use immediate update for user-initiated menu action
-                            return await ShelfStateViewModel.shared.resolveAndUpdateBookmark(for: item)
+                            // Use async resolution for user-initiated menu action
+                            return await ShelfStateViewModel.shared.resolveAndUpdateBookmarkAsync(for: item)
                         }
                         return nil
                     }
@@ -516,10 +627,20 @@ final class ShelfItemViewModel: ObservableObject {
 
             case "Copy Path":
                 let selected = ShelfSelectionModel.shared.selectedItems(in: ShelfStateViewModel.shared.items)
-                let paths = selected.compactMap { $0.fileURL?.path }
-                if !paths.isEmpty {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(paths.joined(separator: "\n"), forType: .string)
+                Task {
+                    let paths = await selected.asyncCompactMap { item -> String? in
+                        if case .file = item.kind,
+                           let url = await ShelfStateViewModel.shared.resolveFileURLAsync(for: item) {
+                            return url.path
+                        }
+                        return nil
+                    }
+                    if !paths.isEmpty {
+                        await MainActor.run {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(paths.joined(separator: "\n"), forType: .string)
+                        }
+                    }
                 }
 
             case "Copy":
@@ -536,14 +657,14 @@ final class ShelfItemViewModel: ObservableObject {
                 Task {
                     let fileURLs = await selected.asyncCompactMap { item -> URL? in
                         if case .file = item.kind {
-                            return ShelfStateViewModel.shared.resolveAndUpdateBookmark(for: item)
+                            return await ShelfStateViewModel.shared.resolveAndUpdateBookmarkAsync(for: item)
                         }
                         return nil
                     }
                     if !fileURLs.isEmpty {
                         // Start security-scoped access for all URLs and keep them active
                         ShelfItemViewModel.copiedURLs = fileURLs.filter { $0.startAccessingSecurityScopedResource() }
-                        Log.debug("🔐 Started security-scoped access for \(ShelfItemViewModel.copiedURLs.count) copied files")
+                        NSLog("🔐 Started security-scoped access for \(ShelfItemViewModel.copiedURLs.count) copied files")
                         
                         // Write to pasteboard
                         pb.writeObjects(fileURLs as [NSURL])
@@ -580,7 +701,11 @@ final class ShelfItemViewModel: ObservableObject {
                             await TemporaryFileStorageService.shared.createZip(from: urls)
                         }) {
                             if let bookmark = try? Bookmark(url: zipTempURL) {
-                                let newItem = ShelfItem(kind: .file(bookmark: bookmark.data), isTemporary: true)
+                                let newItem = ShelfItem(
+                                    kind: .file(bookmark: bookmark.data),
+                                    isTemporary: true,
+                                    cachedPath: zipTempURL.standardizedFileURL.path
+                                )
                                 ShelfStateViewModel.shared.add([newItem])
                             } else {
                                 // Fallback: reveal the temporary file in Finder
@@ -588,7 +713,7 @@ final class ShelfItemViewModel: ObservableObject {
                             }
                         }
                     } catch {
-                        Log.error("❌ Compress failed: \(error)")
+                        print("❌ Compress failed: \(error)")
                     }
                 }
                 
@@ -739,10 +864,10 @@ final class ShelfItemViewModel: ObservableObject {
                             if alwaysCheckbox.state == .on, let bundleID = Bundle(url: appURL)?.bundleIdentifier {
                                 if let contentType = (try? fileURL.resourceValues(forKeys: [.contentTypeKey]))?.contentType {
                                     let status = LSSetDefaultRoleHandlerForContentType(contentType.identifier as CFString, LSRolesMask.all, bundleID as CFString)
-                                    if status != noErr { Log.debug("⚠️ Failed to set default handler for \(contentType.identifier): \(status)") }
+                                    if status != noErr { print("⚠️ Failed to set default handler for \(contentType.identifier): \(status)") }
                                 } else if let scheme = fileURL.scheme {
                                     let status = LSSetDefaultHandlerForURLScheme(scheme as CFString, bundleID as CFString)
-                                    if status != noErr { Log.debug("⚠️ Failed to set default handler for scheme \(scheme): \(status)") }
+                                    if status != noErr { print("⚠️ Failed to set default handler for scheme \(scheme): \(status)") }
                                 }
                             }
 
@@ -754,7 +879,7 @@ final class ShelfItemViewModel: ObservableObject {
                                 try await NSWorkspace.shared.open([fileURL], withApplicationAt: appURL, configuration: config)
                             }
                         } catch {
-                            Log.error("❌ Failed to open with application: \(error.localizedDescription)")
+                            print("❌ Failed to open with application: \(error.localizedDescription)")
                         }
                     }
                 }
@@ -782,15 +907,19 @@ final class ShelfItemViewModel: ObservableObject {
                         if response == .OK, let newURL = savePanel.url {
                             Task {
                                 do {
-                                    Log.debug("🔐 Rename: moving from \(fileURL.path) to \(newURL.path) (securityScope=\(didStart))")
+                                    NSLog("🔐 Rename: moving from \(fileURL.path) to \(newURL.path) (securityScope=\(didStart))")
 
                                     try FileManager.default.moveItem(at: fileURL, to: newURL)
 
                                     if let newBookmark = try? Bookmark(url: newURL) {
-                                        ShelfStateViewModel.shared.updateBookmark(for: item, bookmark: newBookmark.data)
+                                        ShelfStateViewModel.shared.updateBookmark(
+                                            for: item,
+                                            bookmark: newBookmark.data,
+                                            path: newURL.standardizedFileURL.path
+                                        )
                                     }
                                 } catch {
-                                    Log.error("❌ Failed to rename file: \(error.localizedDescription)")
+                                    print("❌ Failed to rename file: \(error.localizedDescription)")
                                 }
                                 if didStart { fileURL.stopAccessingSecurityScopedResource() }
                             }
@@ -826,7 +955,7 @@ final class ShelfItemViewModel: ObservableObject {
                         }
                     }
                 } catch {
-                    Log.error("❌ Failed to remove background: \(error.localizedDescription)")
+                    print("❌ Failed to remove background: \(error.localizedDescription)")
                     await showErrorAlert(title: "Background Removal Failed", message: error.localizedDescription)
                 }
             }
@@ -856,7 +985,7 @@ final class ShelfItemViewModel: ObservableObject {
                         }
                     }
                 } catch {
-                    Log.error("❌ Failed to create PDF: \(error.localizedDescription)")
+                    print("❌ Failed to create PDF: \(error.localizedDescription)")
                     await showErrorAlert(title: "PDF Creation Failed", message: error.localizedDescription)
                 }
             }
@@ -1064,7 +1193,7 @@ final class ShelfItemViewModel: ObservableObject {
                             }
                         }
                     } catch {
-                        Log.error("❌ Failed to convert image: \(error.localizedDescription)")
+                        print("❌ Failed to convert image: \(error.localizedDescription)")
                         showErrorAlert(title: "Image Conversion Failed", message: error.localizedDescription)
                     }
                 }

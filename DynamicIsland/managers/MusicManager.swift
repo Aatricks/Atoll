@@ -492,6 +492,7 @@ class MusicManager: ObservableObject {
 
     @Published var animations: DynamicIslandAnimations = .init()
     @Published var avgColor: NSColor = .white
+    @Published var secondaryColor: NSColor = .gray
     @Published var bundleIdentifier: String? = nil
     /// Stable identifier for the current track (e.g. `spotify:track:…`), when the active
     /// source provides one. Drives source-specific actions like Spotify Like/Unlike.
@@ -517,6 +518,7 @@ class MusicManager: ObservableObject {
     private var lyricSyncTask: Task<Void, Never>?
     private var lyricsFetchTask: Task<Void, Never>?
     private var lyricsFetchKey: LyricsLookupKey?
+    private var lyricsFetchID: UUID?
     private var activeLyricsKey: LyricsLookupKey?
     private var lyricsCache: [LyricsLookupKey: [LyricLine]] = [:]
     // Bounded, insertion-order eviction so the cache cannot grow unboundedly.
@@ -524,6 +526,13 @@ class MusicManager: ObservableObject {
     private var lyricsCacheOrder: [LyricsLookupKey] = []
     private var explicitLookupTask: Task<Void, Never>?
     private var explicitLookupKey: String?
+
+    // MARK: - Spotify Liked Songs
+    /// nil = unknown (not Spotify, not connected, or lookup pending) — the like button renders disabled.
+    @Published private(set) var isCurrentTrackLiked: Bool? = nil
+    private var likedLookupTrackID: String?
+    private var likedLookupTask: Task<Void, Never>?
+    private var likeToggleTask: Task<Void, Never>?
 
     /// Inserts lyrics with insertion-order eviction to keep the cache bounded.
     private func storeLyricsInCache(_ lyrics: [LyricLine], for key: LyricsLookupKey) {
@@ -859,14 +868,18 @@ class MusicManager: ObservableObject {
             }
 
             self.refreshExplicitFlag(for: state)
+            self.refreshLikedFlag(for: state)
 
 
             // Only update sneak peek if there's actual content and something changed
             if shouldAutoPeekOnTrackChange && !state.title.isEmpty && !state.artist.isEmpty && state.isPlaying {
                 self.updateSneakPeek()
             }
-        } else if state.isExplicit != nil {
-            self.refreshExplicitFlag(for: state)
+        } else {
+            if state.isExplicit != nil {
+                self.refreshExplicitFlag(for: state)
+            }
+            self.refreshLikedFlag(for: state)
         }
 
         let timeChanged = state.currentTime != self.elapsedTime
@@ -926,6 +939,61 @@ class MusicManager: ObservableObject {
             startLyricSync()
         } else {
             stopLyricSync()
+        }
+    }
+
+    @MainActor
+    private func refreshLikedFlag(for state: PlaybackState) {
+        guard state.bundleIdentifier == SpotifyController.bundleIdentifier,
+              SpotifyLibraryManager.shared.isAuthenticated,
+              let lookupKey = SpotifyExplicitnessResolver.LookupKey(
+                  contentIdentifier: state.contentIdentifier,
+                  contentURL: state.contentURL
+              )
+        else {
+            likedLookupTask?.cancel()
+            likedLookupTask = nil
+            likedLookupTrackID = nil
+            if isCurrentTrackLiked != nil {
+                isCurrentTrackLiked = nil
+            }
+            return
+        }
+
+        guard likedLookupTrackID != lookupKey.trackID else { return }
+
+        likedLookupTask?.cancel()
+        likeToggleTask?.cancel()
+        likedLookupTrackID = lookupKey.trackID
+        isCurrentTrackLiked = nil
+
+        let trackID = lookupKey.trackID
+        likedLookupTask = Task { [weak self] in
+            let saved = await SpotifyLibraryManager.shared.isTrackSaved(trackID: trackID)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard let self, self.likedLookupTrackID == trackID else { return }
+                self.isCurrentTrackLiked = saved
+            }
+        }
+    }
+
+    @MainActor
+    func toggleLike() {
+        guard let trackID = likedLookupTrackID,
+              let currentValue = isCurrentTrackLiked else { return }
+
+        let targetValue = !currentValue
+        isCurrentTrackLiked = targetValue
+
+        likeToggleTask?.cancel()
+        likeToggleTask = Task { [weak self] in
+            let success = await SpotifyLibraryManager.shared.setTrackSaved(targetValue, trackID: trackID)
+            guard !Task.isCancelled, !success else { return }
+            await MainActor.run {
+                guard let self, self.likedLookupTrackID == trackID else { return }
+                self.isCurrentTrackLiked = currentValue
+            }
         }
     }
 
@@ -1185,10 +1253,11 @@ class MusicManager: ObservableObject {
     }
 
     func calculateAverageColor() {
-        albumArt.averageColor { [weak self] color in
+        albumArt.prominentOpposingColors { [weak self] primary, secondary in
             DispatchQueue.main.async {
                 withAnimation(.smooth) {
-                    self?.avgColor = color ?? .white
+                    self?.avgColor = primary
+                    self?.secondaryColor = secondary
                 }
             }
         }
@@ -1373,26 +1442,40 @@ class MusicManager: ObservableObject {
         if isEnabled {
             prepareLyricsForCurrentTrack(prioritizeVisibleResult: true)
         } else {
-            stopLyricSync()
+            discardLyrics()
         }
     }
 
+    /// Drops any lyrics state and stops an in-flight fetch.
+    private func discardLyrics() {
+        activeLyricsKey = nil
+        lyricsFetchKey = nil
+        lyricsFetchID = nil
+        lyricsFetchTask?.cancel()
+        lyricsFetchTask = nil
+        syncedLyrics = []
+        currentLyrics = ""
+        currentLyricIndex = -1
+        stopLyricSync()
+    }
+
     private func prepareLyricsForCurrentTrack(forceFetch: Bool = false, prioritizeVisibleResult: Bool = false) {
+        // `enableLyrics` reached only as far as the display: with lyrics switched
+        // off the placeholder was suppressed, but the track title and artist were
+        // still sent to LRCLIB on every track change, and nothing consumed the
+        // reply. Stop before the request rather than after it.
+        guard Defaults[.enableLyrics] else {
+            discardLyrics()
+            return
+        }
+
         guard let lookup = currentLyricsLookupContext() else {
-            activeLyricsKey = nil
-            lyricsFetchKey = nil
-            lyricsFetchTask?.cancel()
-            lyricsFetchTask = nil
-            syncedLyrics = []
-            currentLyrics = ""
-            currentLyricIndex = -1
-            stopLyricSync()
+            discardLyrics()
             return
         }
 
         let key = lookup.key
-        let lyricsEnabled = Defaults[.enableLyrics]
-        let shouldShowLoading = lyricsEnabled && prioritizeVisibleResult
+        let shouldShowLoading = prioritizeVisibleResult
         let trackChanged = activeLyricsKey != key
         activeLyricsKey = key
 
@@ -1417,8 +1500,10 @@ class MusicManager: ObservableObject {
 
         lyricsFetchTask?.cancel()
         lyricsFetchKey = key
+        let fetchID = UUID()
+        lyricsFetchID = fetchID
 
-        if shouldShowLoading || (lyricsEnabled && syncedLyrics.isEmpty) {
+        if shouldShowLoading || syncedLyrics.isEmpty {
             currentLyrics = "Loading lyrics..."
         }
 
@@ -1438,21 +1523,23 @@ class MusicManager: ObservableObject {
                 guard !Task.isCancelled else { return }
 
                 await MainActor.run {
-                    guard self.activeLyricsKey == key else { return }
+                    guard self.lyricsFetchID == fetchID, self.activeLyricsKey == key else { return }
                     self.storeLyricsInCache(lyrics, for: key)
                     self.lyricsFetchKey = nil
+                    self.lyricsFetchID = nil
                     self.lyricsFetchTask = nil
                     self.applyLyricsToDisplay(lyrics)
                 }
             } catch {
                 Log.error("Failed to fetch lyrics: \(error)")
                 await MainActor.run {
-                    guard self.activeLyricsKey == key else { return }
+                    guard self.lyricsFetchID == fetchID, self.activeLyricsKey == key else { return }
                     self.lyricsFetchKey = nil
+                    self.lyricsFetchID = nil
                     self.lyricsFetchTask = nil
                     self.syncedLyrics = []
                     self.currentLyricIndex = -1
-                    self.currentLyrics = lyricsEnabled ? "No lyrics found" : ""
+                    self.currentLyrics = "No lyrics found"
                     self.stopLyricSync()
                 }
             }
@@ -1775,6 +1862,8 @@ extension MusicManager {
             return spotifyGreen
         case .amazonMusic:
             return amazonOrange
+        case .cider:
+            return .accentColor
         case .nowPlaying:
             if let bundleIdentifier,
                let bundleColor = brandAccentColor(forBundleIdentifier: bundleIdentifier) {
@@ -1794,6 +1883,8 @@ extension MusicManager {
             return spotifyGreen
         case AmazonMusicController.bundleIdentifier:
             return amazonOrange
+        case CiderController.bundleIdentifier:
+            return .accentColor
         default:
             return nil
         }

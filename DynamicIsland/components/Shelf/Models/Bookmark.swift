@@ -35,17 +35,49 @@ struct Bookmark: Sendable, Equatable, Codable {
             throw NSError(domain: "Bookmark", code: 1, userInfo: [NSLocalizedDescriptionKey: "Not a valid file URL or file does not exist at \(url.path)"])
         }
         do {
+            // Atoll is not sandboxed (ENABLE_APP_SANDBOX = NO), so it already has
+            // full file access and cannot create security-scoped bookmarks:
+            // `.withSecurityScope` requires the App Sandbox entitlement and throws
+            // on macOS 26 (Tahoe), which silently dropped every shelf drop (#461/#646).
+            // Plain bookmarks are sufficient and correct for a non-sandboxed app.
             let bookmark = try url.bookmarkData(
-                options: .withSecurityScope,
+                options: [],
                 includingResourceValuesForKeys: nil,
                 relativeTo: nil
             )
-            Log.debug("✅ Successfully created bookmark for \(url.path)")
+            NSLog("✅ Successfully created bookmark for \(url.path)")
             self.data = bookmark
         } catch {
-            Log.debug("❌ Failed to create bookmark for \(url.path): \(error.localizedDescription)")
+            NSLog("❌ Failed to create bookmark for \(url.path): \(error.localizedDescription)")
             throw error
         }
+    }
+
+    func resolveAsync() async -> (url: URL?, refreshedData: Data?) {
+        guard !data.isEmpty else { return (nil, nil) }
+        return await Task.detached(priority: .userInitiated) { [data] in
+            var isStale = false
+            do {
+                let url = try URL(
+                    resolvingBookmarkData: data,
+                    options: [],
+                    relativeTo: nil,
+                    bookmarkDataIsStale: &isStale
+                )
+                if isStale, let newData = try? url.bookmarkData(options: []) {
+                    NSLog("⚠️ Bookmark was stale for \(url.path), refreshed")
+                    return (url, newData)
+                }
+                return (url, nil)
+            } catch {
+                NSLog("❌ Failed to resolve bookmark asynchronously: \(error.localizedDescription)")
+                return (nil, nil)
+            }
+        }.value
+    }
+
+    func resolveURL() -> URL? {
+        return resolve().url
     }
 
     func resolve() -> (url: URL?, refreshedData: Data?) {
@@ -54,37 +86,38 @@ struct Bookmark: Sendable, Equatable, Codable {
         do {
             let url = try URL(
                 resolvingBookmarkData: data,
-                options: [.withSecurityScope],
+                options: [],
                 relativeTo: nil,
                 bookmarkDataIsStale: &isStale
             )
-            if isStale, let newData = try? url.bookmarkData(options: [.withSecurityScope]) {
-                Log.debug("⚠️ Bookmark was stale for \(url.path), refreshed")
+            if isStale, let newData = try? url.bookmarkData(options: []) {
+                NSLog("⚠️ Bookmark was stale for \(url.path), refreshed")
                 return (url, newData)
             }
             return (url, nil)
         } catch {
-            Log.error("❌ Failed to resolve bookmark: \(error.localizedDescription)")
+            NSLog("❌ Failed to resolve bookmark: \(error.localizedDescription)")
             return (nil, nil)
         }
     }
 
-    func resolveURL() -> URL? {
-        return resolve().url
-    }
-
-    var refreshedData: Data? {
-        return resolve().refreshedData
-    }
-    
-    static func update(in items: inout [ShelfItem], for item: ShelfItem, newBookmark: Data) {
-        guard let idx = items.firstIndex(where: { $0.id == item.id }) else { return }
-        guard case .file = items[idx].kind else { return }
-        items[idx].kind = ShelfItemKind.file(bookmark: newBookmark)
+    /// Same as `resolve()`, but never tries to mount a volume: on an unreachable
+    /// network share `URL(resolvingBookmarkData:)` otherwise blocks for the mount
+    /// timeout. Use this on synchronous main-actor paths; `resolveAsync()`
+    /// deliberately keeps mounting since it runs off the main actor.
+    func resolveWithoutMounting() -> URL? {
+        guard !data.isEmpty else { return nil }
+        var isStale = false
+        return try? URL(
+            resolvingBookmarkData: data,
+            options: [.withoutMounting],
+            relativeTo: nil,
+            bookmarkDataIsStale: &isStale
+        )
     }
 
     func validate() async -> Bool {
-        let (url, _) = resolve()
+        let (url, _) = await resolveAsync()
         guard let url = url else { return false }
         return url.accessSecurityScopedResource { url in
             FileManager.default.fileExists(atPath: url.path)

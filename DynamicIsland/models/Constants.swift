@@ -307,13 +307,15 @@ enum ThirdPartyCalendarApp: String, CaseIterable, Codable, Defaults.Serializable
 enum ClipboardDisplayMode: String, CaseIterable, Codable, Defaults.Serializable {
     case popover = "popover"     // Traditional popover attached to button
     case panel = "panel"         // Floating panel near notch
-    case separateTab = "separateTab" // Separate tab in Dynamic Island
-    
+    case separateTab = "separateTab" // Separate tab in Dynamic Island (merges with Notes)
+    case notchTab = "notchTab"   // Dedicated clipboard tab inside the notch (draggable items)
+
     var displayName: String {
         switch self {
         case .popover: return String(localized: "Popover")
         case .panel: return String(localized: "Panel")
         case .separateTab: return String(localized: "Separate Tab")
+        case .notchTab: return String(localized: "Notch Tab")
         }
     }
     
@@ -322,6 +324,7 @@ enum ClipboardDisplayMode: String, CaseIterable, Codable, Defaults.Serializable 
         case .popover: return "Shows clipboard as a dropdown attached to the clipboard button"
         case .panel: return "Shows clipboard in a floating panel near the notch"
         case .separateTab: return "Shows copied items in a separate tab within the Dynamic Island (merges with Notes if enabled)"
+        case .notchTab: return "Shows copied items in a dedicated clipboard tab inside the notch; drag items straight out to other apps"
         }
     }
 }
@@ -625,6 +628,33 @@ enum FocusMonitoringMode: String, CaseIterable, Identifiable, Defaults.Serializa
     }
 }
 
+enum SiriResponsivenessMode: String, CaseIterable, Identifiable, Defaults.Serializable {
+    case automatic
+    case highPerformance
+    case balanced
+    case powerSaver
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .automatic: return String(localized: "Automatic")
+        case .highPerformance: return String(localized: "High Performance")
+        case .balanced: return String(localized: "Balanced")
+        case .powerSaver: return String(localized: "Power Saver")
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .automatic: return String(localized: "Adapts based on power source and battery level.")
+        case .highPerformance: return String(localized: "Ultra-fast detection (30Hz) for near-instant hiding.")
+        case .balanced: return String(localized: "Standard detection (16Hz) for smooth responsiveness.")
+        case .powerSaver: return String(localized: "Slower detection (4Hz) to maximize battery life.")
+        }
+    }
+}
+
 enum ReminderPresentationStyle: String, CaseIterable, Identifiable, Defaults.Serializable {
     case ringCountdown = "Ring"
     case digital = "Digital"
@@ -824,13 +854,19 @@ struct NoteItem: Codable, Identifiable, Defaults.Serializable, Hashable {
     }
 }
 
+enum ColorExtractionMode: String, CaseIterable, Identifiable, Defaults.Serializable {
+    case legacy, vibrant
+    var id: Self { self }
+}
+
 extension Defaults.Keys {
         // MARK: General
+    static let updateChannel = Key<UpdateChannel>("updateChannel", default: .stable)
     static let logLevel = Key<LogLevel>("logLevel", default: .none)
     static let menubarIcon = Key<Bool>("menubarIcon", default: true)
     static let showOnAllDisplays = Key<Bool>("showOnAllDisplays", default: false)
     static let automaticallySwitchDisplay = Key<Bool>("automaticallySwitchDisplay", default: true)
-    static let releaseName = Key<String>("releaseName", default: "Fiji")
+    static let releaseName = Key<String>("releaseName", default: "Kaafu")
     static let hideDynamicIslandFromScreenCapture = Key<Bool>("hideDynamicIslandFromScreenCapture", default: false)
     
         // MARK: Behavior
@@ -838,6 +874,7 @@ extension Defaults.Keys {
     static let enableHaptics = Key<Bool>("enableHaptics", default: true)
     static let openNotchOnHover = Key<Bool>("openNotchOnHover", default: true)
 	static let extendHoverArea = Key<Bool>("extendHoverArea", default: false)
+    static let siriResponsivenessMode = Key<SiriResponsivenessMode>("siriResponsivenessMode", default: .automatic)
     static let externalDisplayStyle = Key<ExternalDisplayStyle>(
         "externalDisplayStyle",
         default: .notch
@@ -867,6 +904,7 @@ extension Defaults.Keys {
     static let settingsIconInNotch = Key<Bool>("settingsIconInNotch", default: true)
     static let lightingEffect = Key<Bool>("lightingEffect", default: true)
     static let accentColor = Key<Color>("accentColor", default: Color.blue)
+    static let colorExtractionMode = Key<ColorExtractionMode>("colorExtractionMode", default: .legacy)
     static let enableShadow = Key<Bool>("enableShadow", default: true)
     static let cornerRadiusScaling = Key<Bool>("cornerRadiusScaling", default: true)
     static let useModernCloseAnimation = Key<Bool>("useModernCloseAnimation", default: true)
@@ -899,6 +937,8 @@ extension Defaults.Keys {
     static let reverseScrollGestures = Key<Bool>("reverseScrollGestures", default: false)
     
         // MARK: Media playback
+    static let visualizerBarCount = Key<Int>("visualizerBarCount", default: 4)
+    static let enableWaveformScrubber = Key<Bool>("enableWaveformScrubber", default: true)
     static let coloredSpectrogram = Key<Bool>("coloredSpectrogram", default: true)
     static let enableRealTimeWaveform = Key<Bool>("enableRealTimeWaveform", default: false)
     static let enableSneakPeek = Key<Bool>("enableSneakPeek", default: false)
@@ -942,6 +982,7 @@ extension Defaults.Keys {
     static let lockScreenMusicAlbumParallaxEnabled = Key<Bool>("lockScreenMusicAlbumParallaxEnabled", default: false)
     static let lockScreenTimerVerticalOffset = Key<Double>("lockScreenTimerVerticalOffset", default: 0)
     static let lockScreenTimerWidgetWidth = Key<Double>("lockScreenTimerWidgetWidth", default: 350)
+    static let lockScreenWidgetAppearance = Key<LockScreenWidgetAppearance>("lockScreenWidgetAppearance", default: .dark)
     static let lockScreenGlassStyle = Key<LockScreenGlassStyle>("lockScreenGlassStyle", default: .liquid)
     static let lockScreenGlassCustomizationMode = Key<LockScreenGlassCustomizationMode>(
         "lockScreenGlassCustomizationMode",
@@ -998,6 +1039,7 @@ extension Defaults.Keys {
     static let showBatteryIndicator = Key<Bool>("showBatteryIndicator", default: BatteryActivityManager.shared.hasBattery())
     static let showBatteryPercentage = Key<Bool>("showBatteryPercentage", default: true)
     static let showBatteryPercentInside = Key<Bool>("showBatteryPercentInside", default: true)
+    static let showMinimalisticBatteryIndicator = Key<Bool>("showMinimalisticBatteryIndicator", default: true)
     static let showPowerStatusIcons = Key<Bool>("showPowerStatusIcons", default: true)
     static let playLowBatteryAlertSound = Key<Bool>("playLowBatteryAlertSound", default: true)
     static let showChargingBatteryHUD = Key<Bool>("showChargingBatteryHUD", default: true)
@@ -1043,6 +1085,7 @@ extension Defaults.Keys {
         static let localSendDevicePickerGlassMode = Key<LockScreenGlassCustomizationMode>("localSendDevicePickerGlassMode", default: .standard)
         static let localSendDevicePickerLiquidGlassVariant = Key<LiquidGlassVariant>("localSendDevicePickerLiquidGlassVariant", default: .v11)
         static let copyOnDrag = Key<Bool>("copyOnDrag", default: false)
+        static let allowMoveOnDrag = Key<Bool>("allowMoveOnDrag", default: false)
         static let autoRemoveShelfItems = Key<Bool>("autoRemoveShelfItems", default: false)
         static let expandedDragDetection = Key<Bool>("expandedDragDetection", default: true)
     
@@ -1073,6 +1116,10 @@ extension Defaults.Keys {
     static let spotifyOAuthRefreshToken = Key<String>("spotifyOAuthRefreshToken", default: "")
     static let spotifyOAuthExpiration = Key<Double>("spotifyOAuthExpiration", default: 0)
     static let spotifyStandalonePlayback = Key<Bool>("spotifyStandalonePlayback", default: true)
+    static let spotifyLibraryClientID = Key<String>("spotifyLibraryClientID", default: "")
+    static let spotifyLibraryAccessToken = Key<String>("spotifyLibraryAccessToken", default: "")
+    static let spotifyLibraryRefreshToken = Key<String>("spotifyLibraryRefreshToken", default: "")
+    static let spotifyLibraryTokenExpiration = Key<Double>("spotifyLibraryTokenExpiration", default: 0)
 
     // MARK: Bluetooth Audio Devices
     static let showBluetoothDeviceConnections = Key<Bool>("showBluetoothDeviceConnections", default: true)
@@ -1083,9 +1130,16 @@ extension Defaults.Keys {
     static let showBluetoothBatteryPercentageText = Key<Bool>("showBluetoothBatteryPercentageText", default: false)
     static let showBluetoothDeviceNameMarquee = Key<Bool>("showBluetoothDeviceNameMarquee", default: false)
     static let useBluetoothHUD3DIcon = Key<Bool>("useBluetoothHUD3DIcon", default: true)
+    static let showAirPodsListeningModeChanges = Key<Bool>("showAirPodsListeningModeChanges", default: true)
     
     // MARK: Stats Feature
     static let enableStatsFeature = Key<Bool>("enableStatsFeature", default: false)
+    static let enableLLMUsageFeature = Key<Bool>("enableLLMUsageFeature", default: false)
+    static let enableLLMUsageTracking = Key<Bool>("enableLLMUsageTracking", default: true)
+    static let enableClaudeProvider = Key<Bool>("enableClaudeProvider", default: true)
+    static let enableCodexProvider = Key<Bool>("enableCodexProvider", default: true)
+    static let enableCursorProvider = Key<Bool>("enableCursorProvider", default: true)
+    static let enableAntigravityProvider = Key<Bool>("enableAntigravityProvider", default: true)
     static let autoStartStatsMonitoring = Key<Bool>("autoStartStatsMonitoring", default: true)
     static let statsStopWhenNotchCloses = Key<Bool>("statsStopWhenNotchCloses", default: true)
     static let statsUpdateInterval = Key<Double>("statsUpdateInterval", default: 1.0)

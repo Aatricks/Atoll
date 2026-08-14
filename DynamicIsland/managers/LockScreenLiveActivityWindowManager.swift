@@ -21,6 +21,7 @@ import Defaults
 import SkyLightWindow
 import SwiftUI
 import QuartzCore
+import Combine
 
 @MainActor
 class LockScreenLiveActivityWindowManager {
@@ -36,6 +37,7 @@ class LockScreenLiveActivityWindowManager {
     private var screenChangeObserver: NSObjectProtocol?
     private var workspaceObservers: [NSObjectProtocol] = []
     private var currentNotchSize: CGSize?
+    private var siriVisibilityCancellables = Set<AnyCancellable>()
 
     /// Whether the target screen uses Dynamic Island (pill) mode.
     private var isDynamicIslandMode: Bool {
@@ -101,30 +103,29 @@ class LockScreenLiveActivityWindowManager {
 
         self.window = window
         self.hasDelegated = false
+        
+        // Use the centralized autohide helper
+        var siriCancellables = Set<AnyCancellable>()
+        SiriVisibilityMonitor.shared.autohide(window, cancellables: &siriCancellables)
+        self.siriVisibilityCancellables = siriCancellables
+
         return window
     }
 
     private func lockContext() -> (notchSize: CGSize, screen: NSScreen)? {
         guard let screen = LockScreenDisplayContextProvider.shared.contextSnapshot()?.screen ?? NSScreen.main else {
-            Log.debug("[\(timestamp())] LockScreenLiveActivityWindowManager: no main screen available")
+            print("[\(timestamp())] LockScreenLiveActivityWindowManager: no main screen available")
             return nil
         }
 
         guard let viewModel else {
-            Log.debug("[\(timestamp())] LockScreenLiveActivityWindowManager: no view model configured")
+            print("[\(timestamp())] LockScreenLiveActivityWindowManager: no view model configured")
             return nil
         }
 
         var notchSize = viewModel.closedNotchSize
         if notchSize.width <= 0 || notchSize.height <= 0 {
             notchSize = getClosedNotchSize(screen: screen.localizedName)
-        }
-
-        // The overlay masquerades as the notch on the lock screen, where no
-        // menu bar masks a height shortfall — never let it be shorter than the
-        // physical notch of the screen it is shown on.
-        if let physicalHeight = physicalNotchHeight(for: screen) {
-            notchSize.height = max(notchSize.height, physicalHeight)
         }
 
         return (notchSize, screen)
@@ -150,6 +151,7 @@ class LockScreenLiveActivityWindowManager {
         workspaceObservers = [wakeObserver]
     }
 
+
     private func handleScreenGeometryChange(reason: String) {
         guard let window else { return }
         guard window.isVisible || window.alphaValue > 0.01 else { return }
@@ -168,7 +170,7 @@ class LockScreenLiveActivityWindowManager {
 
         currentNotchSize = context.notchSize
 
-        Log.debug("[\(timestamp())] LockScreenLiveActivityWindowManager: realigned window due to \(reason)")
+        print("[\(timestamp())] LockScreenLiveActivityWindowManager: realigned window due to \(reason)")
     }
 
     private func present(notchSize: CGSize, on screen: NSScreen) {
@@ -232,7 +234,7 @@ class LockScreenLiveActivityWindowManager {
             }
         }
 
-        Log.debug("[\(timestamp())] LockScreenLiveActivityWindowManager: showing locked state")
+        print("[\(timestamp())] LockScreenLiveActivityWindowManager: showing locked state")
     }
 
     func showUnlockAndScheduleHide() {
@@ -288,7 +290,7 @@ class LockScreenLiveActivityWindowManager {
             self.currentNotchSize = nil
         }
 
-        Log.debug("[\(timestamp())] LockScreenLiveActivityWindowManager: HUD hidden")
+        print("[\(timestamp())] LockScreenLiveActivityWindowManager: HUD hidden")
     }
 
     func configure(viewModel: DynamicIslandViewModel) {

@@ -846,6 +846,7 @@ struct SettingsView: View {
 
             // Lock Screen
             SettingsSearchEntry(tab: .lockScreen, title: "Preview lock screen widgets", keywords: ["preview", "lock screen", "widgets"], highlightID: SettingsTab.lockScreen.highlightID(for: "Preview lock screen widgets")),
+            SettingsSearchEntry(tab: .lockScreen, title: "Widget appearance", keywords: ["appearance", "theme", "dark", "light", "contrast", "wallpaper"], highlightID: SettingsTab.lockScreen.highlightID(for: "Widget appearance")),
             SettingsSearchEntry(tab: .lockScreen, title: "Enable lock screen live activity", keywords: ["lock screen", "live activity"], highlightID: SettingsTab.lockScreen.highlightID(for: "Enable lock screen live activity")),
             SettingsSearchEntry(tab: .lockScreen, title: "Play lock/unlock sounds", keywords: ["chime", "sound"], highlightID: SettingsTab.lockScreen.highlightID(for: "Play lock/unlock sounds")),
             SettingsSearchEntry(tab: .lockScreen, title: "Material", keywords: ["glass", "frosted", "liquid"], highlightID: SettingsTab.lockScreen.highlightID(for: "Material")),
@@ -901,6 +902,11 @@ struct SettingsView: View {
 
             // Stats
             SettingsSearchEntry(tab: .stats, title: "Enable system stats monitoring", keywords: ["stats", "monitoring"], highlightID: SettingsTab.stats.highlightID(for: "Enable system stats monitoring")),
+            SettingsSearchEntry(tab: .stats, title: "Enable LLM Usage Monitor", keywords: ["llm", "usage", "ai", "monitor"], highlightID: SettingsTab.stats.highlightID(for: "Enable LLM Usage Monitor")),
+            SettingsSearchEntry(tab: .stats, title: "Claude Provider", keywords: ["llm", "claude", "provider", "toggle"], highlightID: SettingsTab.stats.highlightID(for: "Claude Provider")),
+            SettingsSearchEntry(tab: .stats, title: "Codex Provider", keywords: ["llm", "codex", "provider", "toggle"], highlightID: SettingsTab.stats.highlightID(for: "Codex Provider")),
+            SettingsSearchEntry(tab: .stats, title: "Cursor Provider", keywords: ["llm", "cursor", "provider", "toggle"], highlightID: SettingsTab.stats.highlightID(for: "Cursor Provider")),
+            SettingsSearchEntry(tab: .stats, title: "Antigravity Provider", keywords: ["llm", "antigravity", "provider", "toggle"], highlightID: SettingsTab.stats.highlightID(for: "Antigravity Provider")),
             SettingsSearchEntry(tab: .stats, title: "Stop monitoring after closing the notch", keywords: ["stats", "auto stop"], highlightID: SettingsTab.stats.highlightID(for: "Stop monitoring after closing the notch")),
             SettingsSearchEntry(tab: .stats, title: "CPU Usage", keywords: ["cpu", "graph"], highlightID: SettingsTab.stats.highlightID(for: "CPU Usage")),
             SettingsSearchEntry(tab: .stats, title: "Temperature unit", keywords: ["cpu", "temperature", "celsius", "fahrenheit"], highlightID: SettingsTab.stats.highlightID(for: "Temperature unit")),
@@ -1081,6 +1087,7 @@ struct GeneralSettings: View {
     @Default(.enableGestures) var enableGestures
     @Default(.openNotchOnHover) var openNotchOnHover
     @Default(.enableMinimalisticUI) var enableMinimalisticUI
+    @Default(.showMinimalisticBatteryIndicator) var showMinimalisticBatteryIndicator
     @Default(.enableHorizontalMusicGestures) var enableHorizontalMusicGestures
     @Default(.musicGestureBehavior) var musicGestureBehavior
     @Default(.reverseSwipeGestures) var reverseSwipeGestures
@@ -1106,10 +1113,16 @@ struct GeneralSettings: View {
                 }
                 .settingsHighlight(id: highlightID("Enable Minimalistic UI"))
 
+                Defaults.Toggle(key: .showMinimalisticBatteryIndicator) {
+                    Text("Show battery indicator")
+                }
+                .disabled(!enableMinimalisticUI)
+                .settingsHighlight(id: highlightID("Show battery indicator in Minimalistic UI"))
+
                 Defaults.Toggle(key: .showBatteryPercentInside) {
                     Text("Show battery percentage inside icon")
                 }
-                .disabled(!enableMinimalisticUI)
+                .disabled(!enableMinimalisticUI || !Defaults[.showMinimalisticBatteryIndicator])
                 .settingsHighlight(id: highlightID("Show battery percentage inside icon"))
             } header: {
                 Text("UI Mode")
@@ -2546,6 +2559,9 @@ private struct DevicesSettingsView: View {
                     Text("Scroll device name in HUD")
                 }
                 .settingsHighlight(id: highlightID("Scroll device name in HUD"))
+                Defaults.Toggle(key: .showAirPodsListeningModeChanges) {
+                    Text("Show AirPods listening mode changes")
+                }
                 VStack(alignment: .leading, spacing: 12) {
                     Text("HUD icon style")
                         .font(.system(size: 13, weight: .semibold))
@@ -2782,6 +2798,9 @@ struct Media: View {
     @Default(.lockScreenMusicFullscreenArtworkEnabled) private var lockScreenMusicFullscreenArtworkEnabled
     @Default(.showStandardMediaControls) private var showStandardMediaControls
     @Default(.autoHideInactiveNotchMediaPlayer) private var autoHideInactiveNotchMediaPlayer
+    @Default(.visualizerBarCount) private var visualizerBarCount
+    @Default(.enableWaveformScrubber) private var enableWaveformScrubber
+    @Default(.colorExtractionMode) private var colorExtractionMode
     @Default(.parallaxEffectIntensity) private var parallaxEffectIntensity
 
     
@@ -2838,6 +2857,7 @@ struct Media: View {
 
             if mediaController == .spotify {
                 SpotifyAuthSettingsSection()
+                SpotifyLikeButtonSettingsSection()
             }
 
             Section {
@@ -2990,6 +3010,19 @@ struct Media: View {
                     }
                 }
                 .settingsHighlight(id: highlightID("Enable real-time waveform"))
+                
+                Picker("Visualizer candles", selection: $visualizerBarCount) {
+                    Text("4").tag(4)
+                    Text("5").tag(5)
+                    Text("6").tag(6)
+                }
+                
+                Picker("Color extraction", selection: $colorExtractionMode) {
+                    Text("Legacy").tag(ColorExtractionMode.legacy)
+                    Text("Vibrant").tag(ColorExtractionMode.vibrant)
+                }
+                
+                Toggle("Scrubbable real-time waveform", isOn: $enableWaveformScrubber)
             } header: {
                 Text("Music Visualizer")
             } footer: {
@@ -3556,6 +3589,7 @@ struct CalendarSettings: View {
 
 struct About: View {
     @State private var showBuildNumber: Bool = false
+    @Default(.updateChannel) var updateChannel
     let updaterController: SPUStandardUpdaterController
     @Environment(\.openWindow) var openWindow
     var body: some View {
@@ -3571,6 +3605,17 @@ struct About: View {
                     HStack {
                         Text("Version")
                         Spacer()
+
+                        // Channel badge
+                        Text(UpdateChannel.buildChannel.displayName)
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color(UpdateChannel.buildChannel.badgeColor).opacity(0.2))
+                            .foregroundStyle(Color(UpdateChannel.buildChannel.badgeColor))
+                            .clipShape(Capsule())
+
                         if showBuildNumber {
                             Text("(\(Bundle.main.buildVersionNumber ?? ""))")
                                 .foregroundStyle(.secondary)
@@ -3797,6 +3842,7 @@ struct Shelf: View {
     @Default(.quickShareProvider) var quickShareProvider
     @Default(.expandedDragDetection) var expandedDragDetection
     @Default(.copyOnDrag) var copyOnDrag
+    @Default(.allowMoveOnDrag) var allowMoveOnDrag
     @Default(.autoRemoveShelfItems) var autoRemoveShelfItems
     @StateObject private var quickShareService = QuickShareService.shared
     @ObservedObject private var fullDiskAccessPermission = FullDiskAccessPermissionStore.shared
@@ -3877,6 +3923,11 @@ struct Shelf: View {
                     Text("Copy items on drag")
                 }
                 .settingsHighlight(id: highlightID("Copy items on drag"))
+
+                Defaults.Toggle(key: .allowMoveOnDrag) {
+                    Text("Allow moving files when dragging out")
+                }
+                .settingsHighlight(id: highlightID("Allow move on drag"))
 
                 Defaults.Toggle(key: .autoRemoveShelfItems) {
                     Text("Remove from shelf after dragging")
@@ -5007,6 +5058,8 @@ struct LockScreenSettings: View {
     @Default(.lockScreenSelectedCalendarIDs) private var lockScreenSelectedCalendarIDs
     @Default(.lockScreenShowCalendarEventAfterStartEnabled) private var lockScreenShowCalendarEventAfterStartEnabled
     @Default(.lockScreenMusicMergedAirPlayOutput) private var lockScreenMusicMergedAirPlayOutput
+    @Default(.siriResponsivenessMode) private var siriResponsivenessMode
+    @Default(.lockScreenWidgetAppearance) private var lockScreenWidgetAppearance
     @ObservedObject private var musicManager = MusicManager.shared
 
     private var isAppleMusicActive: Bool {
@@ -5108,6 +5161,24 @@ struct LockScreenSettings: View {
             }
 
             Section {
+                Picker("Siri detection speed", selection: $siriResponsivenessMode) {
+                    ForEach(SiriResponsivenessMode.allCases) { mode in
+                        VStack(alignment: .leading) {
+                            Text(mode.displayName)
+                            Text(mode.description)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }.tag(mode)
+                    }
+                }
+                .settingsHighlight(id: highlightID("Siri detection speed"))
+            } header: {
+                Text("Siri Detection")
+            } footer: {
+                Text("Higher speeds allow widgets to hide almost instantly when Siri is invoked, but may impact battery life when on battery power.")
+            }
+
+            Section {
                 Button(previewManager.isPreviewVisible ? "Hide lock screen preview" : "Preview lock screen widgets") {
                     previewManager.togglePreview()
                 }
@@ -5117,6 +5188,20 @@ struct LockScreenSettings: View {
                 Text("Preview")
             } footer: {
                 Text("Opens a transparent preview window with mock data that mirrors the current lock screen widget configuration.")
+            }
+
+            Section {
+                Picker("Widget appearance", selection: $lockScreenWidgetAppearance) {
+                    ForEach(LockScreenWidgetAppearance.allCases) { appearance in
+                        Text(appearance.localizedName).tag(appearance)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .settingsHighlight(id: highlightID("Widget appearance"))
+            } header: {
+                Text("Appearance")
+            } footer: {
+                Text("Use Light when the wallpaper is bright so titles and labels stay readable.")
             }
 
             Section {
@@ -7120,6 +7205,7 @@ private struct TimerPresetComponentControl: View {
 struct StatsSettings: View {
     @ObservedObject var statsManager = StatsManager.shared
     @Default(.enableStatsFeature) var enableStatsFeature
+    @Default(.enableLLMUsageFeature) var enableLLMUsageFeature
     @Default(.statsStopWhenNotchCloses) var statsStopWhenNotchCloses
     @Default(.statsUpdateInterval) var statsUpdateInterval
     @Default(.showCpuGraph) var showCpuGraph
@@ -7167,13 +7253,49 @@ struct StatsSettings: View {
                     // Note: Smart monitoring will handle starting when switching to stats tab
                 }
 
+                Defaults.Toggle(key: .enableLLMUsageFeature) {
+                    Text("Enable LLM Usage Monitor")
+                }
+                .settingsHighlight(id: highlightID("Enable LLM Usage Monitor"))
+
             } header: {
                 Text("General")
             } footer: {
-                Text("When enabled, the Stats tab will display real-time system performance graphs. This feature requires system permissions and may use additional battery.")
+                Text("When enabled, the Stats tab will display real-time system performance graphs. This feature requires system permissions and may use additional battery. Enabling LLM Usage Monitor adds a Usage tab that tracks token usage and spend across your configured AI providers.")
                     .multilineTextAlignment(.trailing)
                     .foregroundStyle(.secondary)
                     .font(.caption)
+            }
+
+            if enableLLMUsageFeature {
+                Section {
+                    Defaults.Toggle(key: .enableClaudeProvider) {
+                        Text("Claude")
+                    }
+                    .settingsHighlight(id: highlightID("Claude Provider"))
+
+                    Defaults.Toggle(key: .enableCodexProvider) {
+                        Text("Codex")
+                    }
+                    .settingsHighlight(id: highlightID("Codex Provider"))
+
+                    Defaults.Toggle(key: .enableCursorProvider) {
+                        Text("Cursor")
+                    }
+                    .settingsHighlight(id: highlightID("Cursor Provider"))
+
+                    Defaults.Toggle(key: .enableAntigravityProvider) {
+                        Text("Antigravity")
+                    }
+                    .settingsHighlight(id: highlightID("Antigravity Provider"))
+                } header: {
+                    Text("LLM Providers")
+                } footer: {
+                    Text("Choose which AI providers appear in the Usage tab.")
+                        .multilineTextAlignment(.trailing)
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
+                }
             }
 
             if enableStatsFeature {

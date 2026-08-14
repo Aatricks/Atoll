@@ -1,0 +1,83 @@
+name: Validate Changelog
+
+on:
+  pull_request:
+    branches:
+      - dev
+    types: [opened, synchronize, reopened]
+
+jobs:
+  validate:
+    name: Validate CHANGELOG.md
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check CHANGELOG.md was modified
+        id: changelog_check
+        run: |
+          # Get the list of changed files in this PR
+          CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+
+          if echo "$CHANGED_FILES" | grep -q "^CHANGELOG.md$"; then
+            echo "modified=true" >> "$GITHUB_OUTPUT"
+            echo "✅ CHANGELOG.md was modified in this PR"
+          else
+            echo "modified=false" >> "$GITHUB_OUTPUT"
+            echo "❌ CHANGELOG.md was NOT modified in this PR"
+          fi
+
+      - name: Validate changelog entries
+        if: steps.changelog_check.outputs.modified == 'true'
+        run: |
+          # Extract the [Unreleased] section
+          UNRELEASED=$(awk '/^## \[Unreleased\]/{found=1; next} /^## \[/{if(found) exit} found{print}' CHANGELOG.md)
+
+          if [ -z "$UNRELEASED" ]; then
+            echo "::error::No content found under [Unreleased] section in CHANGELOG.md"
+            exit 1
+          fi
+
+          # Check that at least one category header exists with content
+          HAS_ENTRIES=false
+
+          for CATEGORY in "Added" "Changed" "Fixed" "Removed" "Deprecated" "Security"; do
+            # Check if the category has any entries (lines starting with -)
+            SECTION=$(echo "$UNRELEASED" | awk -v cat="### $CATEGORY" '
+              $0 ~ cat {found=1; next}
+              /^### /{if(found) exit}
+              found && /^- /{print}
+            ')
+            if [ -n "$SECTION" ]; then
+              HAS_ENTRIES=true
+              echo "✅ Found entries under '### $CATEGORY'"
+            fi
+          done
+
+          if [ "$HAS_ENTRIES" = false ]; then
+            echo "::error::No changelog entries found under [Unreleased]. Please add entries under appropriate category headers (### Added, ### Changed, ### Fixed, etc.)"
+            exit 1
+          fi
+
+          echo "✅ Changelog validation passed"
+
+      - name: Fail if changelog not modified
+        if: steps.changelog_check.outputs.modified == 'false'
+        run: |
+          echo "::error::CHANGELOG.md must be updated in every PR to dev. Please add your changes under the [Unreleased] section."
+          echo ""
+          echo "Template:"
+          echo "  ## [Unreleased]"
+          echo "  ### Added"
+          echo "  - Description of new feature (#PR)"
+          echo ""
+          echo "  ### Changed"
+          echo "  - Description of changed behavior (#PR)"
+          echo ""
+          echo "  ### Fixed"
+          echo "  - Description of bug fix (#PR)"
+          exit 1

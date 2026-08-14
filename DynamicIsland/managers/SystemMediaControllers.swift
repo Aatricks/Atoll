@@ -510,6 +510,7 @@ final class SystemBrightnessController {
     private let maximumBrightnessAnimationDuration: TimeInterval = 0.3
     private let brightnessAnimationDurationScale: TimeInterval = 1.6
     private var lastEmittedBrightness: Float = 0.5
+    private var pendingAdjustTarget: Float?
     private let coreBrightnessClient = CoreBrightnessDisplayClient.shared
     private var pollTimer: Timer?
     private let pollInterval: TimeInterval = 0.15
@@ -557,15 +558,24 @@ final class SystemBrightnessController {
         userInitiatedResetTimer?.invalidate()
         userInitiatedResetTimer = nil
         userInitiatedBrightnessChange = false
+        pendingAdjustTarget = nil
     }
 
     func adjust(by delta: Float) {
-        // Refresh baseline to avoid jumping if auto-brightness changed the level.
-        syncWithSystemBrightnessIfNeeded()
         markUserInitiated()
-        let target = max(0, min(1, lastEmittedBrightness + delta))
+
+        // Do not synchronously query CoreBrightness/DisplayServices here. This
+        // method is reached from hardware-key handling, and those calls can be
+        // slow enough for macOS to disable the event tap. beginBrightnessAnimation
+        // still refreshes the system baseline after the tap callback has returned.
+        let inFlightTarget = brightnessAnimationTimer == nil ? nil : brightnessAnimationTarget
+        let base = pendingAdjustTarget ?? inFlightTarget ?? lastEmittedBrightness
+        pendingAdjustTarget = max(0, min(1, base + delta))
+
         DispatchQueue.main.async { [weak self] in
-            self?.beginBrightnessAnimation(to: target)
+            guard let self, let target = self.pendingAdjustTarget else { return }
+            self.pendingAdjustTarget = nil
+            self.beginBrightnessAnimation(to: target)
         }
     }
 

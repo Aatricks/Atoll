@@ -148,9 +148,16 @@ struct ContentView: View {
             return CGSize(width: baseSize.width, height: 250) // Extra height for timer presets
         }
         
-        if coordinator.currentView == .notes || coordinator.currentView == .clipboard {
+        if coordinator.currentView == .notes {
             let preferredHeight = coordinator.notesLayoutState.preferredHeight
             let resolvedHeight = max(baseSize.height, preferredHeight)
+            return CGSize(width: baseSize.width, height: resolvedHeight)
+        }
+
+        if coordinator.currentView == .clipboard {
+            // Clipboard has its own fixed height source; don't inherit whatever notes
+            // layout state happens to be set.
+            let resolvedHeight = max(baseSize.height, NotesLayoutState.list.preferredHeight)
             return CGSize(width: baseSize.width, height: resolvedHeight)
         }
 
@@ -1110,12 +1117,14 @@ struct ContentView: View {
                                   NotchTimerView()
                               case .stats:
                                   NotchStatsView()
+                              case .llmUsage:
+                                  NotchLLMUsageView()
                               case .colorPicker:
                                   NotchColorPickerView()
                             case .notes:
                                 NotchNotesView()
                             case .clipboard:
-                                NotchNotesView()
+                                NotchClipboardView()
                             case .terminal:
                                 NotchTerminalView()
                             case .mixer:
@@ -2080,6 +2089,11 @@ struct ContentView: View {
     
     /// Handle hover state changes with debouncing
     private func handleHover(_ hovering: Bool) {
+        // Ignore false hover-exit when the cursor is parked on the screen's top pixel.
+        if !hovering, shouldRetainHoverAtScreenTopEdge() {
+            return
+        }
+
         hoverTask?.cancel()
 
         if hovering {
@@ -2133,35 +2147,75 @@ struct ContentView: View {
                 guard !Task.isCancelled else { return }
 
                 await MainActor.run {
-                    withAnimation(.bouncy.speed(1.2)) {
-                        self.isHovering = false
+                    if self.shouldRetainHoverAtScreenTopEdge() {
+                        return
                     }
-
-                    if self.vm.notchState == .open && !self.shouldPreventAutoClose() {
-                        self.vm.close()
-                    } else if self.vm.notchState == .open
-                                && Defaults[.terminalStickyMode]
-                                && self.coordinator.currentView == .terminal {
-                        // Re-sync monitor state through one code path to avoid
-                        // monitor lifecycle races between hover and state updates.
-                        self.syncStickyTerminalOutsideClickMonitor()
-                    }
+                    self.finishHoverExit()
                 }
             }
         }
     }
 
-    private func isPointInsideNotchWindow(_ point: CGPoint) -> Bool {
+    private func finishHoverExit() {
+        withAnimation(.bouncy.speed(1.2)) {
+            isHovering = false
+        }
+
+        if vm.notchState == .open && !shouldPreventAutoClose() {
+            vm.close()
+        } else if vm.notchState == .open
+                    && Defaults[.terminalStickyMode]
+                    && coordinator.currentView == .terminal {
+            // Re-sync monitor state through one code path to avoid
+            // monitor lifecycle races between hover and state updates.
+            syncStickyTerminalOutsideClickMonitor()
+        }
+    }
+
+    private func shouldRetainHoverAtScreenTopEdge(_ location: NSPoint = NSEvent.mouseLocation) -> Bool {
+        guard let screen = NSScreen.screens.first(where: { $0.localizedName == currentScreenName }) else {
+            return false
+        }
+        guard isHovering || vm.notchState == .open else { return false }
+        guard location.y >= screen.frame.maxY - 1.5 else { return false }
+
+        if vm.notchState == .open {
+            return isPointInsideNotchWindow(location)
+        }
+        return isMouseOverClosedNotchHitArea(location)
+    }
+
+    private func isMouseOverClosedNotchHitArea(_ location: NSPoint = NSEvent.mouseLocation) -> Bool {
+        guard let screen = NSScreen.screens.first(where: { $0.localizedName == currentScreenName }) else {
+            return false
+        }
+
+        let height = vm.effectiveClosedNotchHeight + (isHovering ? 8 : 0) + 6
+        let width = max(vm.closedNotchSize.width + (isHovering ? 8 : 0), 96) + 24
+        let minX = screen.frame.midX - width / 2
+        let minY = screen.frame.maxY - height
+
+        return location.x >= minX && location.x <= minX + width
+            && location.y >= minY && location.y <= screen.frame.maxY
+    }
+
+    private func isPointInsideNotchWindow(_ point: CGPoint = NSEvent.mouseLocation) -> Bool {
         if let appDelegate = AppDelegate.shared {
             if Defaults[.showOnAllDisplays] {
-                return appDelegate.windows.values.contains(where: { $0.frame.contains(point) })
+                return appDelegate.windows.values.contains(where: { frameContainsPointIncludingTopEdge($0.frame, point) })
             }
             if let window = appDelegate.window {
-                return window.frame.contains(point)
+                return frameContainsPointIncludingTopEdge(window.frame, point)
             }
         }
 
-        return NSApp.windows.contains(where: { $0.frame.contains(point) })
+        return NSApp.windows.contains(where: { frameContainsPointIncludingTopEdge($0.frame, point) })
+    }
+
+    /// `CGRect.contains` is half-open on max edges; the top pixel needs inclusive maxY.
+    private func frameContainsPointIncludingTopEdge(_ frame: CGRect, _ point: CGPoint) -> Bool {
+        point.x >= frame.minX && point.x <= frame.maxX
+            && point.y >= frame.minY && point.y <= frame.maxY
     }
     
     // Helper function to check if any popovers are active
@@ -2177,7 +2231,8 @@ struct ContentView: View {
     }
 
     private func shouldPreventAutoClose() -> Bool {
-        coordinator.firstLaunch || hasAnyActivePopovers() || vm.isAutoCloseSuppressed || SharingStateManager.shared.preventNotchClose || (Defaults[.terminalStickyMode] && coordinator.currentView == .terminal)
+        // Dragging a shelf item or clipboard item out necessarily takes the cursor off the notch.
+        coordinator.firstLaunch || hasAnyActivePopovers() || vm.isAutoCloseSuppressed || ShelfSelectionModel.shared.isDragging || ClipboardManager.shared.isDraggingItem || SharingStateManager.shared.preventNotchClose || (Defaults[.terminalStickyMode] && coordinator.currentView == .terminal)
     }
     
     // Helper to prevent rapid haptic feedback

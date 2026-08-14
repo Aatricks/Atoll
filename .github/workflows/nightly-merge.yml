@@ -1,0 +1,89 @@
+name: Nightly Merge
+
+on:
+  schedule:
+    # Run daily at 00:00 UTC
+    - cron: "0 0 * * *"
+
+  # Allow manual trigger
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  merge-dev-to-nightly:
+    name: Merge dev → nightly
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout nightly branch
+        uses: actions/checkout@v4
+        with:
+          ref: nightly
+          fetch-depth: 0
+          persist-credentials: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch dev branch
+        run: |
+          git fetch origin dev
+
+      - name: Check for new commits
+        id: check
+        run: |
+          # Check if dev has any commits ahead of nightly
+          AHEAD=$(git rev-list --count nightly..origin/dev)
+          echo "ahead=$AHEAD" >> "$GITHUB_OUTPUT"
+          if [ "$AHEAD" -eq 0 ]; then
+            echo "📭 No new commits on dev. Skipping merge."
+          else
+            echo "📬 $AHEAD commit(s) to merge from dev → nightly"
+          fi
+
+      - name: Merge dev into nightly
+        if: steps.check.outputs.ahead != '0'
+        id: merge
+        run: |
+          if git merge origin/dev --no-ff -m "chore: nightly merge from dev ($(date -u +%Y-%m-%d))"; then
+            echo "merge_status=success" >> "$GITHUB_OUTPUT"
+            echo "✅ Merge succeeded"
+          else
+            echo "merge_status=conflict" >> "$GITHUB_OUTPUT"
+            echo "⚠️ Merge has conflicts"
+            git merge --abort
+          fi
+
+      - name: Push merged nightly
+        if: steps.merge.outputs.merge_status == 'success'
+        run: |
+          git push origin nightly
+
+      - name: Create conflict PR
+        if: steps.merge.outputs.merge_status == 'conflict'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Check if a conflict PR already exists
+          EXISTING=$(gh pr list --head dev --base nightly --state open --json number --jq '.[0].number // empty' || echo "")
+
+          if [ -n "$EXISTING" ]; then
+            echo "⚠️ Conflict PR #$EXISTING already exists, updating comment"
+            gh pr comment "$EXISTING" --body "🔄 Nightly merge attempted on $(date -u +%Y-%m-%d) but conflicts remain. Please resolve manually."
+          else
+            echo "📝 Creating conflict PR"
+            BODY=$(printf "## Automatic nightly merge failed due to conflicts\n\nThe scheduled merge from \`dev\` into \`nightly\` encountered merge conflicts.\n\n**Please resolve the conflicts manually and merge this PR.**\n\n### Steps to resolve:\n1. Check out the \`nightly\` branch locally\n2. Merge \`dev\` into it: \`git merge origin/dev\`\n3. Resolve conflicts\n4. Push the resolved \`nightly\` branch\n\n_This PR was created automatically by the nightly-merge workflow._")
+            
+            gh pr create \
+              --head dev \
+              --base nightly \
+              --title "🌙 Nightly merge: dev → nightly (conflicts)" \
+              --body "$BODY" \
+              --label "merge-conflict,nightly" || echo "PR creation failed (labels may not exist yet)"
+          fi

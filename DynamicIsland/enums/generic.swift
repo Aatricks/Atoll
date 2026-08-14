@@ -75,6 +75,7 @@ public enum NotchViews {
     case shelf
     case timer
     case stats
+    case llmUsage
     case colorPicker
     case notes
     case clipboard
@@ -271,6 +272,12 @@ enum LockScreenWeatherTemperatureUnit: String, CaseIterable, Defaults.Serializab
         case .fahrenheit: return "fahrenheit"
         }
     }
+    var localizedName: String {
+        switch self {
+        case .celsius: return String(localized: "Celsius")
+        case .fahrenheit: return String(localized: "Fahrenheit")
+        }
+    }
 }
 
 enum LockScreenWeatherAirQualityScale: String, CaseIterable, Defaults.Serializable, Identifiable {
@@ -332,6 +339,27 @@ enum LockScreenReminderChipStyle: String, CaseIterable, Defaults.Serializable, I
                 return String(localized: "White")
             }
         }
+}
+
+/// Glyph contrast for lock-screen widgets sitting on the wallpaper.
+/// Dark = light glyphs (default). Light = dark glyphs for bright wallpapers.
+enum LockScreenWidgetAppearance: String, CaseIterable, Defaults.Serializable, Identifiable {
+    case dark = "Dark"
+    case light = "Light"
+
+    var id: String { rawValue }
+
+    var localizedName: String {
+        switch self {
+        case .dark:
+            return String(localized: "Dark")
+        case .light:
+            return String(localized: "Light")
+        }
+    }
+
+    /// When true, widgets use light (white) glyphs.
+    var usesLightGlyphs: Bool { self == .dark }
 }
 
 enum TimerInputStyle: String, CaseIterable, Defaults.Serializable, Identifiable {

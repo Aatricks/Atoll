@@ -139,6 +139,7 @@ final class LockScreenTimerWidgetPanelManager {
     private(set) var latestFrame: NSRect?
     private var screenChangeObserver: NSObjectProtocol?
     private var workspaceObservers: [NSObjectProtocol] = []
+    private var cancellables = Set<AnyCancellable>()
 
     private init() {
         registerScreenChangeObservers()
@@ -245,6 +246,8 @@ final class LockScreenTimerWidgetPanelManager {
             hasDelegated = true
         }
 
+        SiriVisibilityMonitor.shared.autohide(newWindow, cancellables: &cancellables)
+
         return newWindow
     }
 
@@ -319,7 +322,7 @@ final class LockScreenTimerWidgetPanelManager {
     private func handleScreenGeometryChange(reason: String) {
         guard window?.isVisible == true else { return }
         refreshPosition(animated: false)
-        Log.debug("LockScreenTimerWidgetPanelManager: realigned window due to \(reason)")
+        print("LockScreenTimerWidgetPanelManager: realigned window due to \(reason)")
     }
 
     private func currentScreen() -> NSScreen? {
