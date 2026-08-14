@@ -4909,11 +4909,8 @@ struct Appearance: View {
     private func notchWidthControls() -> some View {
         Section {
             let recommendedMin = currentRecommendedMinimumNotchWidth()
-            let tabCount = enabledStandardTabCount()
             let dynamicRange = Double(recommendedMin)...900
-            
             let closedRange = Double(80)...400
-            let minimalisticRange = Double(250)...600
 
             let widthBinding = Binding<Double>(
                 get: { Double(openNotchWidth) },
@@ -6963,34 +6960,34 @@ struct TimerSettings: View {
         let nextIndex = timerPresets.count + 1
         let defaultColor = Defaults[.accentColor]
         let newPreset = TimerPreset(name: "Preset \(nextIndex)", duration: 5 * 60, color: defaultColor)
-        _ = withAnimation(.smooth) {
+        withAnimation(.smooth) {
             timerPresets.append(newPreset)
         }
     }
 
     private func movePresetUp(_ index: Int) {
         guard index > timerPresets.startIndex else { return }
-        _ = withAnimation(.smooth) {
+        withAnimation(.smooth) {
             timerPresets.swapAt(index, index - 1)
         }
     }
 
     private func movePresetDown(_ index: Int) {
         guard index < timerPresets.index(before: timerPresets.endIndex) else { return }
-        _ = withAnimation(.smooth) {
+        withAnimation(.smooth) {
             timerPresets.swapAt(index, index + 1)
         }
     }
 
     private func removePreset(_ index: Int) {
         guard timerPresets.indices.contains(index) else { return }
-        _ = withAnimation(.smooth) {
+        withAnimation(.smooth) {
             timerPresets.remove(at: index)
         }
     }
 
     private func resetPresets() {
-        _ = withAnimation(.smooth) {
+        withAnimation(.smooth) {
             timerPresets = TimerPreset.defaultPresets
         }
     }
@@ -7609,6 +7606,8 @@ struct ClipboardSettings: View {
                         Text("Panel mode shows clipboard in a floating window near the notch.")
                     case .separateTab:
                         Text("Separate Tab mode integrates Copied Items and Notes into a single view. If both are enabled, Notes appear on the right and Clipboard on the left.")
+                    case .notchTab:
+                        Text("Notch Tab mode displays the clipboard history inside the notch.")
                     }
                 }
 
