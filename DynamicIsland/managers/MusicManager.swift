@@ -733,6 +733,8 @@ class MusicManager: ObservableObject {
             newController = YouTubeMusicController()
         case .amazonMusic:
             newController = AmazonMusicController()
+        case .cider:
+            newController = CiderController()
         }
 
         // Set up state observation for the new controller
@@ -1832,17 +1834,7 @@ class MusicManager: ObservableObject {
         if showLyrics && syncedLyrics.isEmpty {
             // Provide immediate feedback so the UI can show a loading state.
             currentLyrics = "Loading lyrics..."
-
-            Task {
-                await fetchLyrics()
-
-                // If fetch completed but no lyrics were found, show a friendly message.
-                await MainActor.run {
-                    if self.syncedLyrics.isEmpty && self.currentLyrics.isEmpty {
-                        self.currentLyrics = "No lyrics found"
-                    }
-                }
-            }
+            fetchLyrics()
         }
     }
 }
