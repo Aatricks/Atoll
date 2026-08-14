@@ -654,14 +654,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if !AppRuntimeEnvironment.isUITesting {
             PrivacyIndicatorManager.shared.startMonitoring()
         }
-
-        // Setup Siri visibility monitor for window level adaptation
-        SiriVisibilityMonitor.shared.startMonitoring()
-
-        // Setup LLM usage tracker
-        if Defaults[.enableLLMUsageFeature] || Defaults[.enableLLMUsageTracking] {
-            LLMUsageManager.shared.start()
-        }
         
         // Setup Real-time Audio Waveform capture if enabled.
         // Capture itself is started on demand by the visualizer views

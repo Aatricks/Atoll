@@ -224,7 +224,7 @@ class DynamicIslandViewCoordinator: ObservableObject {
         handleExtensionExperienceSnapshot(extensionNotchExperienceManager.activeExperiences)
 
         // Observe all tab-affecting settings to enforce minimum notch width
-        Publishers.MergeMany(
+        let tabPublishers: [AnyPublisher<Void, Never>] = [
             Defaults.publisher(.showStandardMediaControls).map { _ in () }.eraseToAnyPublisher(),
             Defaults.publisher(.showCalendar).map { _ in () }.eraseToAnyPublisher(),
             Defaults.publisher(.showMirror).map { _ in () }.eraseToAnyPublisher(),
@@ -241,12 +241,14 @@ class DynamicIslandViewCoordinator: ObservableObject {
             Defaults.publisher(.enableFoldersTab).map { _ in () }.eraseToAnyPublisher(),
             Defaults.publisher(.enableSpotifyTab).map { _ in () }.eraseToAnyPublisher(),
             Defaults.publisher(.enableMinimalisticUI).map { _ in () }.eraseToAnyPublisher()
-        )
-        .debounce(for: .milliseconds(100), scheduler: DispatchQueue.main)
-        .sink { _ in
-            enforceMinimumNotchWidth()
-        }
-        .store(in: &cancellables)
+        ]
+
+        Publishers.MergeMany(tabPublishers)
+            .debounce(for: .milliseconds(100), scheduler: DispatchQueue.main)
+            .sink { _ in
+                enforceMinimumNotchWidth()
+            }
+            .store(in: &cancellables)
 
         // Enforce minimum width on launch for existing configurations
         enforceMinimumNotchWidth()

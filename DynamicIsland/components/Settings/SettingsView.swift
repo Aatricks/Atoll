@@ -4909,6 +4909,7 @@ struct Appearance: View {
     private func notchWidthControls() -> some View {
         Section {
             let recommendedMin = currentRecommendedMinimumNotchWidth()
+            let tabCount = enabledStandardTabCount()
             let dynamicRange = Double(recommendedMin)...900
             let closedRange = Double(80)...400
 
