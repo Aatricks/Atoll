@@ -24,14 +24,13 @@ import AppKit
 import Combine
 import Foundation
 
-/// Media Remote stream filtered to `com.amazon.music` only. When another app owns
-/// Now Playing, state idles so stale Amazon metadata is not shown.
-final class AmazonMusicController: ObservableObject, MediaControllerProtocol {
-    static let bundleIdentifier = "com.amazon.music"
+/// Media Remote stream filtered to one application. When another app owns Now
+/// Playing, state idles so stale metadata from the selected player is not shown.
+class FilteredNowPlayingController: ObservableObject, MediaControllerProtocol {
 
     func updatePlaybackInfo() async {}
 
-    @Published private(set) var playbackState: PlaybackState = AmazonMusicController.makeIdlePlaybackState()
+    @Published private(set) var playbackState: PlaybackState
 
     var playbackStatePublisher: AnyPublisher<PlaybackState, Never> {
         $playbackState.eraseToAnyPublisher()
@@ -50,11 +49,17 @@ final class AmazonMusicController: ObservableObject, MediaControllerProtocol {
     private var process: Process?
     private var pipeHandler: JSONLinesPipeHandler?
     private var streamTask: Task<Void, Never>?
+    private let targetBundleIdentifier: String
+    private let controllerName: String
 
-    /// True only after a stream line explicitly identified Amazon Music as the now playing source.
-    private var amazonSessionActive = false
+    /// True only after a stream line explicitly identified the selected app as the now playing source.
+    private var targetSessionActive = false
 
-    init?() {
+    init?(bundleIdentifier: String, controllerName: String) {
+        self.targetBundleIdentifier = bundleIdentifier
+        self.controllerName = controllerName
+        self.playbackState = Self.makeIdlePlaybackState(bundleIdentifier: bundleIdentifier)
+
         guard
             let bundle = CFBundleCreate(
                 kCFAllocatorDefault,
@@ -127,7 +132,7 @@ final class AmazonMusicController: ObservableObject, MediaControllerProtocol {
     }
 
     func isActive() -> Bool {
-        NSWorkspace.shared.runningApplications.contains { $0.bundleIdentifier == Self.bundleIdentifier }
+        NSWorkspace.shared.runningApplications.contains { $0.bundleIdentifier == targetBundleIdentifier }
     }
 
     func toggleShuffle() async {
@@ -162,6 +167,7 @@ final class AmazonMusicController: ObservableObject, MediaControllerProtocol {
 
         let stderrPipe = Pipe()
         process.standardError = stderrPipe
+        let logName = controllerName
         stderrPipe.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
             guard !data.isEmpty,
@@ -169,7 +175,7 @@ final class AmazonMusicController: ObservableObject, MediaControllerProtocol {
                     .trimmingCharacters(in: .whitespacesAndNewlines),
                   !message.isEmpty
             else { return }
-            Log.debug("AmazonMusicController [stderr]: \(message)")
+            print("\(logName) [stderr]: \(message)")
         }
 
         self.process = process
@@ -193,8 +199,8 @@ final class AmazonMusicController: ObservableObject, MediaControllerProtocol {
         }
     }
 
-    private static func makeIdlePlaybackState() -> PlaybackState {
-        var state = PlaybackState(bundleIdentifier: Self.bundleIdentifier)
+    private static func makeIdlePlaybackState(bundleIdentifier: String) -> PlaybackState {
+        var state = PlaybackState(bundleIdentifier: bundleIdentifier)
         state.title = "Unknown"
         state.artist = "Unknown"
         state.album = ""
@@ -208,9 +214,9 @@ final class AmazonMusicController: ObservableObject, MediaControllerProtocol {
         return state
     }
 
-    private func applyIdleBecauseNonAmazonSource() {
-        amazonSessionActive = false
-        playbackState = Self.makeIdlePlaybackState()
+    private func applyIdleBecauseDifferentSource() {
+        targetSessionActive = false
+        playbackState = Self.makeIdlePlaybackState(bundleIdentifier: targetBundleIdentifier)
     }
 
     private func handleAdapterUpdate(_ update: NowPlayingUpdate) async {
@@ -226,19 +232,19 @@ final class AmazonMusicController: ObservableObject, MediaControllerProtocol {
         }()
 
         if let source = explicitSource {
-            if source != Self.bundleIdentifier {
-                applyIdleBecauseNonAmazonSource()
+            if source != targetBundleIdentifier {
+                applyIdleBecauseDifferentSource()
                 return
             }
-            amazonSessionActive = true
+            targetSessionActive = true
         } else if !diff {
-            applyIdleBecauseNonAmazonSource()
+            applyIdleBecauseDifferentSource()
             return
-        } else if !amazonSessionActive {
+        } else if !targetSessionActive {
             return
         }
 
-        var newPlaybackState = PlaybackState(bundleIdentifier: Self.bundleIdentifier)
+        var newPlaybackState = PlaybackState(bundleIdentifier: targetBundleIdentifier)
 
         newPlaybackState.title = payload.title ?? (diff ? self.playbackState.title : "")
         newPlaybackState.artist = payload.artist ?? (diff ? self.playbackState.artist : "")
@@ -280,8 +286,30 @@ final class AmazonMusicController: ObservableObject, MediaControllerProtocol {
 
         newPlaybackState.playbackRate = payload.playbackRate ?? (diff ? self.playbackState.playbackRate : 1.0)
         newPlaybackState.isPlaying = payload.playing ?? (diff ? self.playbackState.isPlaying : false)
-        newPlaybackState.bundleIdentifier = Self.bundleIdentifier
+        newPlaybackState.bundleIdentifier = targetBundleIdentifier
 
         self.playbackState = newPlaybackState
+    }
+}
+
+final class AmazonMusicController: FilteredNowPlayingController {
+    static let bundleIdentifier = "com.amazon.music"
+
+    init?() {
+        super.init(
+            bundleIdentifier: Self.bundleIdentifier,
+            controllerName: "AmazonMusicController"
+        )
+    }
+}
+
+final class CiderController: FilteredNowPlayingController {
+    static let bundleIdentifier = "sh.cider.genten.mac"
+
+    init?() {
+        super.init(
+            bundleIdentifier: Self.bundleIdentifier,
+            controllerName: "CiderController"
+        )
     }
 }
