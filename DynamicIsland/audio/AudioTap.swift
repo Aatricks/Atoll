@@ -104,7 +104,7 @@ private func getAudioObjectID(for pid: pid_t) -> AudioObjectID? {
 }
 
 /// Singleton class for real-time audio capture from music apps
-class AudioTap: NSObject {
+class AudioTap: NSObject, @unchecked Sendable {
     static let shared = AudioTap()
     
     let bridge = AudioBridge()
