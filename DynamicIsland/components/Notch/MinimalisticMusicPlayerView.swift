@@ -964,7 +964,7 @@ private struct MinimalisticReminderDetailsView: View {
             ) {
                 enableLyrics.toggle()
             }
-        case .like:
+        case .likeTrack:
             controlButton(
                 icon: likeController.isLiked ? "heart.fill" : "heart",
                 isActive: likeController.isLiked,

@@ -637,7 +637,7 @@ struct MusicControlsView: View {
             ) {
                 enableLyrics.toggle()
             }
-        case .like:
+        case .likeTrack:
             HoverButton(
                 icon: likeController.isLiked ? "heart.fill" : "heart",
                 iconColor: likeController.isLiked ? brandAccentColor : .white,
