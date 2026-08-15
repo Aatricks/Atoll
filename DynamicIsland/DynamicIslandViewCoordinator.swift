@@ -238,8 +238,8 @@ class DynamicIslandViewCoordinator: ObservableObject {
             Defaults.publisher(.clipboardDisplayMode).map { _ in () }.eraseToAnyPublisher(),
             Defaults.publisher(.enableTerminalFeature).map { _ in () }.eraseToAnyPublisher(),
             Defaults.publisher(.enableMixerFeature).map { _ in () }.eraseToAnyPublisher(),
-            Defaults.publisher(.enableFoldersTab).map { _ in () }.eraseToAnyPublisher(),
-            Defaults.publisher(.enableSpotifyTab).map { _ in () }.eraseToAnyPublisher(),
+            Defaults.publisher(.enableFoldersFeature).map { _ in () }.eraseToAnyPublisher(),
+            Defaults.publisher(.enableSpotifyFeature).map { _ in () }.eraseToAnyPublisher(),
             Defaults.publisher(.enableMinimalisticUI).map { _ in () }.eraseToAnyPublisher()
         ]
 
