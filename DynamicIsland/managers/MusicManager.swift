@@ -494,6 +494,9 @@ class MusicManager: ObservableObject {
     @Published var avgColor: NSColor = .white
     @Published var secondaryColor: NSColor = .gray
     @Published var bundleIdentifier: String? = nil
+
+    var isAppleMusicActive: Bool { bundleIdentifier == "com.apple.Music" }
+    var isSpotifyActive: Bool { bundleIdentifier == SpotifyController.bundleIdentifier }
     /// Stable identifier for the current track (e.g. `spotify:track:…`), when the active
     /// source provides one. Drives source-specific actions like Spotify Like/Unlike.
     @Published var contentIdentifier: String? = nil

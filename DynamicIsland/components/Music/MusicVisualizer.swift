@@ -23,6 +23,7 @@
 import AppKit
 import Cocoa
 import SwiftUI
+import Defaults
 
 class AudioSpectrum: NSView {
     private var barLayers: [CAShapeLayer] = []
@@ -84,8 +85,6 @@ class AudioSpectrum: NSView {
         animationTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
             self?.updateBars()
         }
-        // Random-bar animation — jitter is imperceptible, so let wakeups coalesce.
-        animationTimer?.tolerance = 0.1
     }
     
     private func stopAnimating() {
@@ -103,9 +102,9 @@ class AudioSpectrum: NSView {
             animation.autoreverses = true
             animation.fillMode = .forwards
             animation.isRemovedOnCompletion = false
-            // if #available(macOS 13.0, *) {
-            //     animation.preferredFrameRateRange = CAFrameRateRange(minimum: 24, maximum: 120, preferred: 24)
-            // }
+            if #available(macOS 13.0, *) {
+                animation.preferredFrameRateRange = CAFrameRateRange(minimum: 24, maximum: 24, preferred: 24)
+            }
             barLayer.add(animation, forKey: "scaleY")
         }
     }
