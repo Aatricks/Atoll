@@ -686,7 +686,6 @@ private struct MinimalisticReminderDetailsView: View {
                 playbackRate: musicManager.playbackRate,
                 isPlaying: musicManager.isPlaying,
                 isLiveStream: musicManager.isLiveStream,
-                notchState: vm.notchState,
                 onValueChange: { newValue in
                     musicManager.seek(to: newValue)
                 },
