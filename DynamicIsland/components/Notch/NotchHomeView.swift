@@ -277,7 +277,6 @@ struct AlbumArtView: View {
 struct MusicControlsView: View {
     @EnvironmentObject var vm: DynamicIslandViewModel
     @ObservedObject var musicManager = MusicManager.shared
-    @ObservedObject var likeController = SpotifyLikeController.shared
     @ObservedObject var coordinator = DynamicIslandViewCoordinator.shared
     @State private var sliderValue: Double = MusicManager.shared.estimatedPlaybackPosition()
     @State private var dragging: Bool = false
@@ -310,7 +309,9 @@ struct MusicControlsView: View {
         GeometryReader { geo in
             VStack(alignment: .leading, spacing: 4) {
                 songInfo(width: geo.size.width)
+                    .zIndex(1) // Ensure it draws above the waveform scrubber
                 musicSlider
+                    .zIndex(0)
             }
         }
         .padding(.top, 10)
@@ -388,8 +389,7 @@ struct MusicControlsView: View {
                 elapsedTime: musicManager.elapsedTime,
                 playbackRate: musicManager.playbackRate,
                 isPlaying: musicManager.isPlaying,
-                isLiveStream: musicManager.isLiveStream,
-                notchState: vm.notchState
+                isLiveStream: musicManager.isLiveStream
             ) { newValue in
                 guard !musicManager.isLiveStream else { return }
                 MusicManager.shared.seek(to: newValue)
@@ -547,13 +547,9 @@ struct MusicControlsView: View {
         }
     }
 
-    private var isAppleMusicActive: Bool {
-        musicManager.bundleIdentifier == "com.apple.Music"
-    }
-
     private var displayedSlots: [MusicControlButton] {
         if showCustomControls {
-            let normalized = slotConfig.normalized(allowingMediaOutput: showMediaOutputControl, isAppleMusicActive: isAppleMusicActive)
+            let normalized = slotConfig.normalized(allowingMediaOutput: showMediaOutputControl, isAppleMusicActive: musicManager.isAppleMusicActive, isSpotifyActive: musicManager.isSpotifyActive)
             return normalized.contains(where: { $0 != .none }) ? normalized : MusicControlButton.defaultLayout
         }
 
@@ -638,15 +634,15 @@ struct MusicControlsView: View {
                 enableLyrics.toggle()
             }
         case .likeTrack:
-            HoverButton(
-                icon: likeController.isLiked ? "heart.fill" : "heart",
-                iconColor: likeController.isLiked ? brandAccentColor : .white,
-                scale: .medium
-            ) {
-                likeController.toggle()
+            LikeTrackControl { presentation, toggle in
+                HoverButton(
+                    icon: presentation.iconName,
+                    iconColor: presentation.isActive ? brandAccentColor : .white,
+                    scale: .medium
+                ) {
+                    toggle()
+                }
             }
-            .opacity(likeController.canLike ? 1 : 0.35)
-            .disabled(!likeController.canLike)
         }
     }
 
@@ -784,13 +780,13 @@ struct MusicSliderView: View {
     let playbackRate: Double
     let isPlaying: Bool
     let isLiveStream: Bool
-    // Optional so hosts without a notch (e.g. the lock screen panel) can omit it
-    var notchState: NotchState? = nil
     var onValueChange: (Double) -> Void
     var labelLayout: TimeLabelLayout = .stacked
     var trailingLabel: TrailingLabel = .duration
-    var restingTrackHeight: CGFloat = 5
-    var draggingTrackHeight: CGFloat = 9
+    var restingTrackHeight: CGFloat = 8
+    var draggingTrackHeight: CGFloat = 14
+    /// When set, bypasses Defaults[.sliderColor] (used by lock screen appearance).
+    var tintOverride: Color? = nil
 
     enum TimeLabelLayout {
         case stacked
@@ -815,41 +811,19 @@ struct MusicSliderView: View {
                 }
             }
         }
+        .onAppear {
+            guard !isLiveStream else { return }
+            guard !dragging else { return }
+            setSliderValueWithoutAnimation(MusicManager.shared.estimatedPlaybackPosition())
+        }
         .onChange(of: currentDate) { newDate in
             guard !isLiveStream else { return }
             guard !dragging, timestampDate.timeIntervalSince(lastDragged) > -1 else { return }
-            
-            let estimated = MusicManager.shared.estimatedPlaybackPosition(at: newDate)
-            let delta = abs(sliderValue - estimated)
-            
-            if delta > 1.5 {
-                // State correction or seek jump: snap instantly
-                sliderValue = estimated
-            } else if isPlaying {
-                // Standard 1-second interval progression: animate smoothly
-                withAnimation(.linear(duration: 1.0)) {
-                    sliderValue = estimated
-                }
-            } else {
-                sliderValue = estimated
-            }
-        }
-        .onChange(of: elapsedTime) { _, newTime in
-            guard !isLiveStream, !dragging else { return }
-            let estimated = MusicManager.shared.estimatedPlaybackPosition()
-            let delta = abs(sliderValue - estimated)
-            
-            if delta > 1.5 {
-                sliderValue = estimated
-            } else if isPlaying {
-                withAnimation(.linear(duration: 1.0)) {
-                    sliderValue = estimated
-                }
-            } else {
-                sliderValue = estimated
-            }
+            setSliderValueWithoutAnimation(MusicManager.shared.estimatedPlaybackPosition(at: newDate))
         }
         .onChange(of: isPlaying) { _, playing in
+            // Snap slider to the exact position when music pauses so
+            // the in-flight animation doesn't coast past the true value.
             if !playing {
                 sliderValue = MusicManager.shared.estimatedPlaybackPosition()
             }
@@ -859,12 +833,13 @@ struct MusicSliderView: View {
                 sliderValue = 0
             }
         }
-        .onChange(of: notchState) { _, newState in
-            if newState == .open {
-                // Hard-align slider to strict ground-truth instantly on expansion
-                // to eliminate background webview throttling drift before drawing
-                sliderValue = elapsedTime
-            }
+    }
+
+    private func setSliderValueWithoutAnimation(_ value: Double) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            sliderValue = value
         }
     }
 
@@ -880,16 +855,16 @@ struct MusicSliderView: View {
             }
             .fontWeight(.medium)
             .foregroundColor(timeLabelColor)
-            .font(.caption)
+            .font(.system(size: 11, weight: .medium, design: .default).monospacedDigit())
         }
     }
 
     private var inlineContent: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 6) {
             Text(timeString(from: sliderValue))
                 .font(inlineLabelFont)
                 .foregroundColor(timeLabelColor)
-                .frame(width: 42, alignment: .leading)
+                .frame(width: 36, alignment: .leading)
 
             sliderCore
                 .frame(height: sliderFrameHeight)
@@ -898,7 +873,7 @@ struct MusicSliderView: View {
             Text(trailingTimeText)
                 .font(inlineLabelFont)
                 .foregroundColor(timeLabelColor)
-                .frame(width: 48, alignment: .trailing)
+                .frame(width: 42, alignment: .trailing)
         }
     }
 
@@ -911,15 +886,15 @@ struct MusicSliderView: View {
                 .frame(height: sliderFrameHeight)
                 
         case .inline:
-            HStack(spacing: 10) {
+            HStack(spacing: 6) {
                 Spacer()
-                    .frame(width: 42)
+                    .frame(width: 36)
                 LiveStreamProgressIndicator(tint: sliderTint)
                     .frame(maxWidth: .infinity)
                     .frame(height: sliderFrameHeight)
 
                 Spacer()
-                    .frame(width: 48)
+                    .frame(width: 42)
             }
         }
     }
@@ -938,6 +913,9 @@ struct MusicSliderView: View {
     }
 
     private var sliderTint: Color {
+        if let tintOverride {
+            return tintOverride
+        }
         switch Defaults[.sliderColor] {
         case .albumArt:
             return Color(nsColor: color).ensureMinimumBrightness(factor: 0.6)
@@ -949,7 +927,10 @@ struct MusicSliderView: View {
     }
 
     private var timeLabelColor: Color {
-        Defaults[.playerColorTinting]
+        if let tintOverride {
+            return tintOverride
+        }
+        return Defaults[.playerColorTinting]
             ? Color(nsColor: color).ensureMinimumBrightness(factor: 0.6)
             : .gray
     }
@@ -965,7 +946,7 @@ struct MusicSliderView: View {
     }
 
     private var inlineLabelFont: Font {
-        .system(size: 11, weight: .medium, design: .monospaced)
+        .system(size: 11, weight: .medium, design: .default).monospacedDigit()
     }
 
     private var sliderFrameHeight: CGFloat {
@@ -984,6 +965,7 @@ struct MusicSliderView: View {
             return String(format: "%d:%02d", minutes, remainingSeconds)
         }
     }
+
 }
 
 
@@ -995,8 +977,12 @@ struct CustomSlider: View {
     @Binding var lastDragged: Date
     var onValueChange: ((Double) -> Void)?
     var thumbSize: CGFloat = 12
-    var restingTrackHeight: CGFloat = 5
-    var draggingTrackHeight: CGFloat = 9
+    var restingTrackHeight: CGFloat = 8
+    var draggingTrackHeight: CGFloat = 14
+    
+    @State private var isHovering: Bool = false
+    @Default(.enableRealTimeWaveform) var enableRealTimeWaveform
+    @Default(.enableWaveformScrubber) var enableWaveformScrubber
 
     var body: some View {
         GeometryReader { geometry in
@@ -1006,20 +992,36 @@ struct CustomSlider: View {
 
             let progress = rangeSpan == .zero ? 0 : (value - range.lowerBound) / rangeSpan
             let filledTrackWidth = min(max(progress, 0), 1) * width
+            
+            let showScrubber = isHovering && enableRealTimeWaveform && enableWaveformScrubber
 
-            ZStack(alignment: .leading) {
+            ZStack(alignment: .bottomLeading) {
                 // Background track
-                Rectangle()
-                    .fill(.gray.opacity(0.3))
-                    .frame(height: trackHeight)
+                if showScrubber {
+                    RealTimeWaveformScrubberView(
+                        color: color,
+                        secondaryColor: Defaults[.coloredSpectrogram] ? Color(nsColor: MusicManager.shared.secondaryColor) : nil,
+                        progress: progress,
+                        minHeight: trackHeight
+                    )
+                    .frame(height: trackHeight * 3.5)
+                    .offset(y: trackHeight * 0.2)
+                } else {
+                    Rectangle()
+                        .fill(.gray.opacity(0.3))
+                        .frame(height: trackHeight)
+                        .cornerRadius(trackHeight / 2)
+                }
 
                 // Filled track
-                Rectangle()
-                    .fill(color)
-                    .frame(width: filledTrackWidth, height: trackHeight)
+                if !showScrubber {
+                    Rectangle()
+                        .fill(color)
+                        .frame(width: filledTrackWidth, height: trackHeight)
+                        .cornerRadius(trackHeight / 2)
+                }
             }
-            .cornerRadius(trackHeight / 2)
-            .frame(height: max(restingTrackHeight, draggingTrackHeight))
+            .frame(height: max(restingTrackHeight, draggingTrackHeight), alignment: .bottom)
             .contentShape(Rectangle())
             .highPriorityGesture(
                 DragGesture(minimumDistance: 0)
@@ -1037,6 +1039,11 @@ struct CustomSlider: View {
                     }
             )
             .animation(.bouncy.speed(1.4), value: dragging)
+            .onHover { hovering in
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isHovering = hovering
+                }
+            }
         }
     }
 }

@@ -42,13 +42,14 @@ struct RealTimeWaveformScrubberView: View {
     private func startTimer() {
         timer?.invalidate()
         let newTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { _ in
-            let tapMagnitudes = AudioTap.shared.getSmoothedMagnitudes()
+            let tap = AudioTap.shared.getSmoothedMagnitudes()
+            let rawMags: [Float] = [tap.x, tap.y, tap.z, tap.w]
             let barCount = Defaults[.visualizerBarCount]
             var newMags: [Float] = []
-            if tapMagnitudes.count >= barCount {
-                newMags = Array(tapMagnitudes.prefix(barCount))
+            if rawMags.count >= barCount {
+                newMags = Array(rawMags.prefix(barCount))
             } else {
-                newMags = tapMagnitudes
+                newMags = rawMags
             }
             
             var smoothedMags = [Float](repeating: 0.1, count: newMags.count)
