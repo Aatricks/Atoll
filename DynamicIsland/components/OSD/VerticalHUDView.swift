@@ -212,6 +212,8 @@ struct VerticalHUDView: View {
               SystemVolumeController.shared.setVolume(Float(level))
          } else if state.type == .brightness {
               SystemBrightnessController.shared.setBrightness(Float(level))
+         } else if state.type == .backlight {
+              SystemKeyboardBacklightController.shared.setLevel(Float(level))
          }
     }
     

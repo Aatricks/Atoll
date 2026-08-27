@@ -480,7 +480,22 @@ struct MusicControlsView: View {
     private func syncHUDValueIfNeeded(force: Bool) {
         guard shouldShowControlHUDRow else { return }
         guard force || !hudDragging else { return }
-        hudValue = Double(coordinator.sneakPeek.value)
+        switch coordinator.sneakPeek.type {
+        case .volume:
+            let (vol, _) = SystemVolumeController.shared.sync()
+            hudValue = Double(vol)
+            coordinator.sneakPeek.value = CGFloat(vol)
+        case .brightness:
+            let brightness = SystemBrightnessController.shared.sync()
+            hudValue = Double(brightness)
+            coordinator.sneakPeek.value = CGFloat(brightness)
+        case .backlight:
+            let level = SystemKeyboardBacklightController.shared.sync()
+            hudValue = Double(level)
+            coordinator.sneakPeek.value = CGFloat(level)
+        default:
+            hudValue = Double(coordinator.sneakPeek.value)
+        }
     }
 
     private func updateControlHUDValue(_ newValue: Double) {
@@ -1060,6 +1075,7 @@ private struct MediaOutputPickerButton: View {
             isPopoverPresented.toggle()
             if isPopoverPresented {
                 routeManager.refreshDevices()
+                volumeModel.syncFromController()
             }
         }
         .accessibilityLabel("Media output")
@@ -1079,6 +1095,7 @@ private struct MediaOutputPickerButton: View {
         }
         .onAppear {
             routeManager.refreshDevices()
+            volumeModel.syncFromController()
         }
         .onChange(of: isPopoverPresented) { _, presented in
             if !presented {
@@ -1170,6 +1187,9 @@ struct MediaOutputSelectorPopover: View {
         }
         .frame(width: 240)
         .padding(16)
+        .onAppear {
+            volumeModel.syncFromController()
+        }
         .onHover { hovering in
             onHoverChanged(hovering)
         }
@@ -1394,8 +1414,9 @@ final class MediaOutputVolumeViewModel: ObservableObject {
     init(controller: SystemVolumeController = .shared) {
         self.controller = controller
         controller.start()
-        level = controller.currentVolume
-        isMuted = controller.isMuted
+        let state = controller.sync()
+        level = state.volume
+        isMuted = state.isMuted
 
         NotificationCenter.default.publisher(for: .systemVolumeDidChange)
             .receive(on: RunLoop.main)
@@ -1417,6 +1438,7 @@ final class MediaOutputVolumeViewModel: ObservableObject {
     }
 
     func setVolume(_ value: Float) {
+        controller.sync()
         level = value
         if value > 0 {
             isMuted = false
@@ -1425,13 +1447,15 @@ final class MediaOutputVolumeViewModel: ObservableObject {
     }
 
     func toggleMute() {
+        controller.sync()
         isMuted.toggle()
         controller.toggleMute()
     }
 
-    private func syncFromController() {
-        level = controller.currentVolume
-        isMuted = controller.isMuted
+    func syncFromController() {
+        let state = controller.sync()
+        level = state.volume
+        isMuted = state.isMuted
     }
 }
 

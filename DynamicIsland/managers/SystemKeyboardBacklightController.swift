@@ -44,8 +44,14 @@ final class SystemKeyboardBacklightController {
         isRunning = false
     }
 
+    @discardableResult
+    func sync() -> Float {
+        currentLevel
+    }
+
     func adjust(by delta: Float) {
-        let target = currentLevel + delta
+        let base = sync()
+        let target = max(0, min(1, base + delta))
         setLevel(target)
     }
 

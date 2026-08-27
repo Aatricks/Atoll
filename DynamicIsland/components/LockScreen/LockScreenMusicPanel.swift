@@ -931,6 +931,14 @@ struct LockScreenMusicPanel: View {
             RoundedRectangle(cornerRadius: isExpanded ? 16 : 12, style: .continuous)
                 .fill(sliderBackgroundFill)
         )
+        .onAppear {
+            volumeModel.syncFromController()
+        }
+        .onChange(of: isVolumeSliderVisible) { _, visible in
+            if visible {
+                volumeModel.syncFromController()
+            }
+        }
     }
 
     private var airPlaySection: some View {

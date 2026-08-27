@@ -106,6 +106,7 @@ final class SystemVolumeController {
 
     func adjust(by delta: Float) {
         guard delta != 0 else { return }
+        sync()
         if isMuted {
             setMuted(false)
         }
@@ -115,18 +116,33 @@ final class SystemVolumeController {
     }
 
     func toggleMute() {
+        sync()
         setMuted(!isMuted)
     }
 
+    @discardableResult
+    func sync() -> (volume: Float, isMuted: Bool) {
+        let defaultID = resolveDefaultDevice()
+        if defaultID != 0 && (defaultID != currentDeviceID || volumeElement == nil || muteElement == nil) {
+            currentDeviceID = defaultID
+            refreshPropertyElements()
+            installVolumeListeners(for: defaultID)
+        }
+        return (getVolume(), getMuteState())
+    }
+
     var currentVolume: Float {
-        getVolume()
+        sync()
+        return getVolume()
     }
 
     var isMuted: Bool {
-        getMuteState()
+        sync()
+        return getMuteState()
     }
 
     func setVolume(_ value: Float) {
+        sync()
         let clamped = max(0, min(1, value))
         let currentlyMuted = isMuted
 
@@ -161,6 +177,7 @@ final class SystemVolumeController {
     }
 
     func setMuted(_ muted: Bool) {
+        sync()
         var muteFlag: UInt32 = muted ? 1 : 0
         let elements = muteElements()
 
@@ -510,7 +527,7 @@ final class SystemBrightnessController {
     private let maximumBrightnessAnimationDuration: TimeInterval = 0.3
     private let brightnessAnimationDurationScale: TimeInterval = 1.6
     private var lastEmittedBrightness: Float = 0.5
-    private var pendingAdjustTarget: Float?
+    private var pendingAdjustDelta: Float = 0
     private let coreBrightnessClient = CoreBrightnessDisplayClient.shared
     private var pollTimer: Timer?
     private let pollInterval: TimeInterval = 0.15
@@ -558,23 +575,38 @@ final class SystemBrightnessController {
         userInitiatedResetTimer?.invalidate()
         userInitiatedResetTimer = nil
         userInitiatedBrightnessChange = false
-        pendingAdjustTarget = nil
+        pendingAdjustDelta = 0
+    }
+
+    @discardableResult
+    func sync() -> Float {
+        displayID = CGMainDisplayID()
+        let level = currentBrightness
+        lastEmittedBrightness = level
+        return level
     }
 
     func adjust(by delta: Float) {
         markUserInitiated()
 
-        // Do not synchronously query CoreBrightness/DisplayServices here. This
-        // method is reached from hardware-key handling, and those calls can be
-        // slow enough for macOS to disable the event tap. beginBrightnessAnimation
-        // still refreshes the system baseline after the tap callback has returned.
-        let inFlightTarget = brightnessAnimationTimer == nil ? nil : brightnessAnimationTarget
-        let base = pendingAdjustTarget ?? inFlightTarget ?? lastEmittedBrightness
-        pendingAdjustTarget = max(0, min(1, base + delta))
+        // Do not synchronously query CoreBrightness/DisplayServices here (e.g. within CGEventTap).
+        // Accumulate deltas and let the main thread sync with OS before computing the animation target.
+        pendingAdjustDelta += delta
 
         DispatchQueue.main.async { [weak self] in
-            guard let self, let target = self.pendingAdjustTarget else { return }
-            self.pendingAdjustTarget = nil
+            guard let self else { return }
+            let deltaToApply = self.pendingAdjustDelta
+            guard deltaToApply != 0 else { return }
+            self.pendingAdjustDelta = 0
+
+            let base: Float
+            if self.brightnessAnimationTimer != nil {
+                base = self.brightnessAnimationTarget
+            } else {
+                // First sync with the OS value because auto-brightness / external changes may have altered it.
+                base = self.sync()
+            }
+            let target = max(0, min(1, base + deltaToApply))
             self.beginBrightnessAnimation(to: target)
         }
     }
@@ -583,7 +615,10 @@ final class SystemBrightnessController {
         let clamped = max(0, min(1, value))
         markUserInitiated()
         DispatchQueue.main.async { [weak self] in
-            self?.beginBrightnessAnimation(to: clamped)
+            guard let self else { return }
+            self.pendingAdjustDelta = 0
+            self.sync()
+            self.beginBrightnessAnimation(to: clamped)
         }
     }
 
@@ -600,6 +635,7 @@ final class SystemBrightnessController {
     }
 
     var currentBrightness: Float {
+        displayID = CGMainDisplayID()
         if let level = coreBrightnessClient.currentBrightness() {
             return level
         }

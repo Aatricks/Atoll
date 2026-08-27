@@ -791,7 +791,22 @@ private struct MinimalisticReminderDetailsView: View {
     private func syncHUDValueIfNeeded(force: Bool) {
         guard shouldShowControlHUDRow else { return }
         guard force || !hudDragging else { return }
-        hudValue = Double(coordinator.sneakPeek.value)
+        switch coordinator.sneakPeek.type {
+        case .volume:
+            let (vol, _) = SystemVolumeController.shared.sync()
+            hudValue = Double(vol)
+            coordinator.sneakPeek.value = CGFloat(vol)
+        case .brightness:
+            let brightness = SystemBrightnessController.shared.sync()
+            hudValue = Double(brightness)
+            coordinator.sneakPeek.value = CGFloat(brightness)
+        case .backlight:
+            let level = SystemKeyboardBacklightController.shared.sync()
+            hudValue = Double(level)
+            coordinator.sneakPeek.value = CGFloat(level)
+        default:
+            hudValue = Double(coordinator.sneakPeek.value)
+        }
     }
 
     private func updateControlHUDValue(_ newValue: Double) {
@@ -1012,6 +1027,7 @@ private struct MinimalisticReminderDetailsView: View {
                 isPopoverPresented.toggle()
                 if isPopoverPresented {
                     routeManager.refreshDevices()
+                    volumeModel.syncFromController()
                 }
             }
             .accessibilityLabel("Media output")
@@ -1037,6 +1053,7 @@ private struct MinimalisticReminderDetailsView: View {
             }
             .onAppear {
                 routeManager.refreshDevices()
+                volumeModel.syncFromController()
             }
             .onDisappear {
                 vm.isMediaOutputPopoverActive = false
